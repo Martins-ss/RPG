@@ -65,7 +65,13 @@ export default function BossesPanel({ players, addLog, adjustHealth, bossHealths
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">{phase.emoji} {phase.name} — Níveis {phase.levelRange[0]}–{phase.levelRange[1]}</div>
                     <div className="mt-2">
-                      <HealthBar current={currentHealth} max={boss.maxHealth} size="md" />
+                      <HealthBar
+                        current={currentHealth}
+                        max={boss.maxHealth}
+                        size="md"
+                        onDecrease={() => adjustBossHealth(boss.name, -1, boss.maxHealth)}
+                        onIncrease={() => adjustBossHealth(boss.name, 1, boss.maxHealth)}
+                      />
                     </div>
                   </div>
                 </div>

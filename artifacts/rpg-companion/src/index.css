@@ -110,7 +110,6 @@ body {
 .card-dark {
   background: linear-gradient(135deg, rgba(26, 26, 37, 0.95), rgba(18, 18, 26, 0.98));
   border: 1px solid rgba(220, 38, 38, 0.15);
-  backdrop-filter: blur(10px);
 }
 
 .card-dark:hover {

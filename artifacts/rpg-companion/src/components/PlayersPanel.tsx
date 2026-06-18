@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Plus, Minus, Trash2, Package, ChevronUp, ChevronDown, UserPlus, Zap } from 'lucide-react';
 import { Player, PlayerClass } from '../types';
 import { CLASS_INFO, getPhaseForLevel } from '../gameData';
@@ -27,6 +27,7 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
   const [xpAmount, setXpAmount] = useState('50');
   const [levelValue, setLevelValue] = useState('1');
   const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const handleAdd = () => {
     if (!newName.trim()) return;
@@ -102,7 +103,12 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
                         {phase && <span className="text-[10px] text-gray-600">{phase.emoji} {phase.name}</span>}
                       </div>
                       <div className="mt-2">
-                        <HeartDisplay current={player.health} max={5} />
+                        <HeartDisplay
+                          current={player.health}
+                          max={5}
+                          onDecrease={() => adjustHealth(player.id, -1)}
+                          onIncrease={() => adjustHealth(player.id, 1)}
+                        />
                       </div>
                       <div className="mt-2">
                         <div className="flex justify-between text-[10px] text-gray-500 mb-0.5">
@@ -171,22 +177,10 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
         </div>
       )}
 
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Novo Aventureiro">
+      <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); setNewName(''); setNewClass('Guerreiro'); }} title="Novo Aventureiro">
         <div className="space-y-4">
           <div>
-            <label className="text-xs text-gray-400 mb-1 block">Nome do Jogador</label>
-            <input
-              type="text"
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              placeholder="Digite o nome..."
-              className="w-full px-3 py-2.5 rounded-lg text-sm"
-              onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 mb-2 block">Classe</label>
+            <label className="text-xs text-gray-400 mb-2 block">1. Escolha a Classe</label>
             <div className="grid grid-cols-1 gap-2">
               {CLASSES.map(cls => {
                 const info = CLASS_INFO[cls];
@@ -194,7 +188,10 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
                 return (
                   <button
                     key={cls}
-                    onClick={() => setNewClass(cls)}
+                    onClick={() => {
+                      setNewClass(cls);
+                      setTimeout(() => nameInputRef.current?.focus(), 50);
+                    }}
                     className={`flex items-center gap-3 p-3 rounded-lg transition-all text-left ${isSelected ? 'ring-1' : 'hover:bg-white/5'}`}
                     style={{
                       background: isSelected ? `${info.color}15` : 'rgba(0,0,0,0.2)',
@@ -210,6 +207,19 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
                 );
               })}
             </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">2. Nome do Aventureiro</label>
+            <input
+              ref={nameInputRef}
+              type="text"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              placeholder="Digite o nome..."
+              className="w-full px-3 py-2.5 rounded-lg text-sm"
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              autoComplete="off"
+            />
           </div>
           <button onClick={handleAdd} disabled={!newName.trim()}
             className="w-full btn-red px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
