@@ -84,18 +84,27 @@ function saveState(state: GameState) {
 }
 
 function loadBossHealths(): BossHealthState {
+  const defaults: BossHealthState = Object.fromEntries(BOSSES.map(b => [b.name, b.maxHealth]));
   try {
     const saved = localStorage.getItem(BOSS_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && typeof parsed === 'object') {
-        return parsed;
+        // Merge: saved values take precedence, but ensure every current boss has a valid numeric entry
+        const merged: BossHealthState = { ...defaults };
+        for (const bossName of Object.keys(defaults)) {
+          const savedVal = parsed[bossName];
+          if (typeof savedVal === 'number' && savedVal >= 0) {
+            merged[bossName] = savedVal;
+          }
+        }
+        return merged;
       }
     }
   } catch (error) {
     console.error('[Store] Erro ao carregar boss health:', error);
   }
-  return Object.fromEntries(BOSSES.map(b => [b.name, b.maxHealth]));
+  return defaults;
 }
 
 function saveBossHealths(healths: BossHealthState) {

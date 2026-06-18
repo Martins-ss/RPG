@@ -18,6 +18,7 @@ export default function HealthBar({ current, max, showLabel = true, size = 'md',
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isClickable) return;
+    e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     if (x < rect.width / 2) {
@@ -67,6 +68,7 @@ export function HeartDisplay({ current, max, onDecrease, onIncrease }: HeartDisp
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isClickable) return;
+    e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     if (x < rect.width / 2) {
@@ -88,7 +90,7 @@ export function HeartDisplay({ current, max, onDecrease, onIncrease }: HeartDisp
           size={20}
           fill={i < current ? '#ef4444' : '#333'}
           color={i < current ? '#ef4444' : '#555'}
-          className={i < current ? 'drop-shadow-[0_0_4px_rgba(239,68,68,0.5)]' : ''}
+          className=""
         />
       ))}
     </div>
