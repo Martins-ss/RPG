@@ -6,10 +6,10 @@ import { v4 as uuidv4 } from 'uuid';
 
 const BOARD_STORAGE_KEY = 'reino-rei-sombrio-tabuleiro';
 
-const PHASE_DEFS: { name: PhaseName; emoji: string; color: string; cells: number }[] = [
-  { name: 'Floresta das Sombras', emoji: '🌲', color: '#16a34a', cells: 10 },
-  { name: 'Cidade Abandonada', emoji: '🏚️', color: '#d97706', cells: 10 },
-  { name: 'Castelo do Rei Sombrio', emoji: '🏰', color: '#dc2626', cells: 10 },
+const PHASE_DEFS: { name: PhaseName; emoji: string; color: string; cells: number; range: [number, number] }[] = [
+  { name: 'Floresta das Sombras',    emoji: '🌲', color: '#16a34a', cells: 24, range: [1,  24] },
+  { name: 'Cidade Abandonada',       emoji: '🏚️', color: '#d97706', cells: 17, range: [25, 41] },
+  { name: 'Castelo do Rei Sombrio',  emoji: '🏰', color: '#dc2626', cells: 27, range: [42, 68] },
 ];
 
 const CELL_CONTENT: Record<PhaseName, Record<BoardCellType, { content: string; description: string; reward?: string; penalty?: string }[]>> = {
@@ -138,11 +138,35 @@ function generateCell(id: number, phase: PhaseName, typeDistrib: BoardCellType[]
 
 function buildDistribution(phase: PhaseName): BoardCellType[] {
   if (phase === 'Floresta das Sombras') {
-    return ['vazia', 'armadilha', 'ouro', 'carta', 'vazia', 'monstro', 'cristal', 'tesouro', 'armadilha', 'especial'];
+    // 24 casas: níveis 1-24
+    return [
+      'vazia',    'armadilha', 'ouro',     'carta',
+      'vazia',    'monstro',   'cristal',  'armadilha',
+      'ouro',     'vazia',     'carta',    'tesouro',
+      'armadilha','monstro',   'vazia',    'ouro',
+      'armadilha','cristal',   'vazia',    'monstro',
+      'carta',    'armadilha', 'tesouro',  'especial',
+    ];
   } else if (phase === 'Cidade Abandonada') {
-    return ['vazia', 'monstro', 'ouro', 'armadilha', 'carta', 'tesouro', 'vazia', 'armadilha', 'cristal', 'especial'];
+    // 17 casas: níveis 25-41
+    return [
+      'vazia',    'monstro',   'ouro',     'armadilha',
+      'carta',    'tesouro',   'armadilha','cristal',
+      'monstro',  'vazia',     'armadilha','ouro',
+      'monstro',  'carta',     'armadilha','vazia',
+      'especial',
+    ];
   } else {
-    return ['monstro', 'armadilha', 'ouro', 'carta', 'armadilha', 'monstro', 'cristal', 'armadilha', 'tesouro', 'especial'];
+    // 27 casas: níveis 42-68
+    return [
+      'monstro',  'armadilha', 'ouro',     'carta',
+      'armadilha','monstro',   'cristal',  'armadilha',
+      'tesouro',  'monstro',   'armadilha','ouro',
+      'armadilha','monstro',   'cristal',  'vazia',
+      'armadilha','monstro',   'carta',    'armadilha',
+      'monstro',  'cristal',   'armadilha','tesouro',
+      'monstro',  'armadilha', 'especial',
+    ];
   }
 }
 
@@ -164,7 +188,7 @@ function loadBoard(): BoardState {
     const saved = localStorage.getItem(BOARD_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed && Array.isArray(parsed.cells) && parsed.cells.length === 30) {
+      if (parsed && Array.isArray(parsed.cells) && parsed.cells.length === 68) {
         return parsed;
       }
     }
@@ -260,7 +284,8 @@ export default function TabuleiroPanel() {
   }, []);
 
   const visitedCount = board.cells.filter(c => c.visited).length;
-  const progress = Math.round((visitedCount / 30) * 100);
+  const totalCells = 68;
+  const progress = Math.round((visitedCount / totalCells) * 100);
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -287,7 +312,7 @@ export default function TabuleiroPanel() {
       <div className="card-dark rounded-xl p-3">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-xs text-gray-400">Progresso da Campanha</span>
-          <span className="text-xs text-red-400 font-medium">{visitedCount}/30 casas ({progress}%)</span>
+          <span className="text-xs text-red-400 font-medium">{visitedCount}/{totalCells} casas ({progress}%)</span>
         </div>
         <div className="h-2 rounded-full bg-black/40 overflow-hidden">
           <div
@@ -314,13 +339,13 @@ export default function TabuleiroPanel() {
                   <h3 className="text-sm font-bold" style={{ color: phase.color, fontFamily: 'Cinzel, serif' }}>
                     {phase.name}
                   </h3>
-                  <p className="text-[10px] text-gray-500">{phaseVisited}/10 casas exploradas</p>
+                  <p className="text-[10px] text-gray-500">{phaseVisited}/{phase.cells} casas exploradas (níveis {phase.range[0]}–{phase.range[1]})</p>
                 </div>
                 <div className="w-16 h-1.5 rounded-full bg-black/40 overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
-                      width: `${(phaseVisited / 10) * 100}%`,
+                      width: `${(phaseVisited / phase.cells) * 100}%`,
                       background: phase.color,
                       boxShadow: `0 0 6px ${phase.color}80`,
                     }}
@@ -328,7 +353,7 @@ export default function TabuleiroPanel() {
                 </div>
               </div>
 
-              <div className="p-3 grid grid-cols-5 gap-2">
+              <div className="p-3 grid grid-cols-6 gap-2">
                 {phaseCells.map(cell => (
                   <button
                     key={cell.id}
