@@ -358,7 +358,7 @@ export default function TabuleiroPanel() {
                   <button
                     key={cell.id}
                     onClick={() => handleCellClick(cell)}
-                    className="relative aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all hover:scale-105 active:scale-95"
+                    className="relative aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 transition-opacity active:opacity-70"
                     style={{
                       background: cell.visited
                         ? `${CELL_TYPE_COLOR[cell.type]}18`

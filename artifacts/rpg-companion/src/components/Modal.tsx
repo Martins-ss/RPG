@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -11,32 +12,36 @@ interface ModalProps {
 
 export default function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape' && isOpen) {
-      console.log('[Modal] Fechando via ESC');
-      onClose();
-    }
+    if (e.key === 'Escape' && isOpen) onClose();
   }, [isOpen, onClose]);
 
   useEffect(() => {
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
       document.addEventListener('keydown', handleKeyDown);
-      console.log(`[Modal] Aberto: ${title}`);
-    } else {
-      document.body.style.overflow = '';
     }
     return () => {
-      document.body.style.overflow = '';
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, handleKeyDown, title]);
+  }, [isOpen, handleKeyDown]);
+
+  // Removed document.body.style.overflow manipulation — on Android, changing
+  // body overflow during a React render triggers a synchronous layout pass
+  // that can move DOM nodes, causing "insertBefore: node not a child" errors.
 
   if (!isOpen) return null;
 
   const sizeClass = size === 'sm' ? 'max-w-md' : size === 'lg' ? 'max-w-3xl' : 'max-w-xl';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={onClose}>
+  // Portal: render into document.body to avoid inline reconciliation conflicts.
+  // Without a portal, multiple Modal siblings inside the same parent (e.g.
+  // PlayersPanel has 5 modals) could confuse React's fiber reconciler on mobile
+  // when states change rapidly — only one modal is ever open at a time but all
+  // share the same parent DOM node as their sibling rendered elements.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay"
+      onClick={onClose}
+    >
       <div
         className={`${sizeClass} w-full card-dark rounded-xl animate-fadeIn max-h-[85vh] flex flex-col`}
         onClick={e => e.stopPropagation()}
@@ -56,6 +61,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

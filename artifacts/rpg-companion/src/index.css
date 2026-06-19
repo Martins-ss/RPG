@@ -44,49 +44,33 @@ body {
   overflow-x: hidden;
 }
 
+/* ─── Animations: NO transform, opacity only ─────────────────────────────────
+   Using transform in keyframes forces GPU compositing on mobile Android/iOS.
+   Opacity-only animations are GPU-safe and don't corrupt rendering layers.
+─────────────────────────────────────────────────────────────────────────────── */
+
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 20px rgba(220, 38, 38, 0.3), 0 0 40px rgba(220, 38, 38, 0.1); }
   50% { box-shadow: 0 0 30px rgba(220, 38, 38, 0.6), 0 0 60px rgba(220, 38, 38, 0.2); }
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-}
-
-@keyframes crystal-rotate {
-  0% { transform: rotate(0deg) scale(1); }
-  25% { transform: rotate(5deg) scale(1.05); }
-  50% { transform: rotate(0deg) scale(1); }
-  75% { transform: rotate(-5deg) scale(1.05); }
-  100% { transform: rotate(0deg) scale(1); }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
-}
-
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes slideIn {
-  from { opacity: 0; transform: translateX(-30px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
 }
 
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
-}
-
-.animate-float {
-  animation: float 3s ease-in-out infinite;
-}
-
-.animate-crystal {
-  animation: crystal-rotate 4s ease-in-out infinite;
 }
 
 .animate-shimmer {
@@ -96,11 +80,11 @@ body {
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.5s ease-out forwards;
+  animation: fadeIn 0.3s ease-out forwards;
 }
 
 .animate-slideIn {
-  animation: slideIn 0.3s ease-out forwards;
+  animation: slideIn 0.2s ease-out forwards;
 }
 
 .bg-dark-gradient {
@@ -120,20 +104,18 @@ body {
   background: linear-gradient(135deg, #991b1b, #dc2626);
   color: white;
   border: 1px solid rgba(239, 68, 68, 0.3);
-  transition: all 0.3s ease;
+  transition: opacity 0.2s ease;
 }
 
 .btn-red:hover {
-  background: linear-gradient(135deg, #dc2626, #ef4444);
-  box-shadow: 0 0 20px rgba(220, 38, 38, 0.4);
-  transform: translateY(-1px);
+  opacity: 0.85;
 }
 
 .btn-dark {
   background: linear-gradient(135deg, #1a1a25, #222233);
   color: #e5e7eb;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.3s ease;
+  transition: border-color 0.2s ease;
 }
 
 .btn-dark:hover {
@@ -173,7 +155,7 @@ body {
 
 .nav-item {
   position: relative;
-  transition: all 0.3s ease;
+  transition: opacity 0.2s ease;
 }
 
 .nav-item.active::after {
@@ -186,21 +168,26 @@ body {
   background: linear-gradient(90deg, transparent, #dc2626, transparent);
 }
 
+/* phase-locked: opacity only — NO CSS filter (filter creates GPU compositing
+   layer that corrupts sibling element rendering on Android Chrome) */
 .phase-locked {
-  filter: grayscale(0.8) brightness(0.5);
+  opacity: 0.35;
   pointer-events: none;
 }
 
+/* modal-overlay: solid semi-transparent background — NO backdrop-filter.
+   backdrop-filter: blur() forces the browser to composite the entire page
+   behind the overlay into a separate GPU texture, causing pixel corruption
+   on Android. A sufficiently dark solid background achieves the same UX. */
 .modal-overlay {
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(5px);
+  background: rgba(0, 0, 0, 0.88);
 }
 
 input, select, textarea {
   background: rgba(10, 10, 15, 0.95) !important;
   border: 1px solid rgba(220, 38, 38, 0.2) !important;
   color: #e5e7eb !important;
-  transition: all 0.3s ease;
+  transition: border-color 0.2s ease;
 }
 
 input:focus, select:focus, textarea:focus {

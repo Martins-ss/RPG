@@ -49,7 +49,7 @@ export default function Dashboard({ players, logs, onNavigate }: DashboardProps)
       }}>
         <div className="absolute inset-0 bg-[url('/images/bg-castle.jpg')] bg-cover bg-center opacity-15 pointer-events-none" />
         <div className="relative p-6 text-center">
-          <div className="text-5xl mb-3 animate-float">👑</div>
+          <div className="text-5xl mb-3">👑</div>
           <h2 className="text-2xl md:text-3xl font-bold text-red-400 text-glow-red mb-1" style={{ fontFamily: 'Cinzel, serif' }}>
             O Reino do Rei Sombrio
           </h2>
@@ -65,25 +65,25 @@ export default function Dashboard({ players, logs, onNavigate }: DashboardProps)
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <button
           onClick={() => { console.log('[Dashboard] Clicou em Adicionar Jogador'); onNavigate('players'); }}
-          className="btn-red px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform"
+          className="btn-red px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2"
         >
           <Plus size={14} /> Adicionar Jogador
         </button>
         <button
           onClick={() => { console.log('[Dashboard] Clicou em Ver Fases'); onNavigate('phases'); }}
-          className="btn-dark px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform"
+          className="btn-dark px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2"
         >
           <Map size={14} /> Ver Fases
         </button>
         <button
           onClick={() => { console.log('[Dashboard] Clicou em Bosses'); onNavigate('bosses'); }}
-          className="btn-dark px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform"
+          className="btn-dark px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2"
         >
           <Skull size={14} /> Bosses
         </button>
         <button
           onClick={() => { console.log('[Dashboard] Clicou em Recompensas'); onNavigate('rewards'); }}
-          className="btn-dark px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform"
+          className="btn-dark px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-2"
         >
           <Gift size={14} /> Recompensas
         </button>
@@ -234,7 +234,7 @@ function StatCard({ icon, label, value, color, onClick }: StatCardProps) {
   return (
     <button
       onClick={() => { console.log(`[StatCard] Clicou em: ${label}`); onClick(); }}
-      className="card-dark rounded-xl p-3 flex flex-col items-center text-center hover:border-red-500/30 transition-all hover:scale-[1.02] cursor-pointer"
+      className="card-dark rounded-xl p-3 flex flex-col items-center text-center hover:border-red-500/30 transition-colors cursor-pointer"
     >
       <div className="mb-1" style={{ color }}>{icon}</div>
       <div className="text-2xl font-bold text-gray-100">{value}</div>

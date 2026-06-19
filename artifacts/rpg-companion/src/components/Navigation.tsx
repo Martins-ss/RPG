@@ -19,10 +19,10 @@ const tabs: { id: TabId; label: string; icon: typeof LayoutDashboard }[] = [
 
 export default function Navigation({ activeTab, onTabChange, playerCount }: NavigationProps) {
   return (
-    <nav className="sticky top-0 z-40 border-b border-red-900/20" style={{ background: 'rgba(10,10,15,0.95)', backdropFilter: 'blur(12px)' }}>
+    <nav className="sticky top-0 z-40 border-b border-red-900/20" style={{ background: 'rgba(10,10,15,0.98)' }}>
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="text-3xl animate-crystal">💎</div>
+          <div className="text-3xl">💎</div>
           <div>
             <h1 className="text-lg font-bold text-red-400 text-glow-red leading-tight" style={{ fontFamily: 'Cinzel, serif' }}>
               O Reino do Rei Sombrio
