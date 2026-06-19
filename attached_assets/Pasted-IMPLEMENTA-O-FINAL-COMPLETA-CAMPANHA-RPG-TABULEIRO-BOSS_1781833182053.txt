@@ -1,0 +1,602 @@
+IMPLEMENTAÇÃO FINAL COMPLETA — CAMPANHA RPG, TABULEIRO, BOSSES, JOGADORES, RECOMPENSAS, CARTAS, ARMADURA LENDÁRIA E SISTEMA DE SALVAMENTO
+
+IMPORTANTE:
+
+* NÃO alterar a estética atual.
+* NÃO alterar cores.
+* NÃO alterar fontes.
+* NÃO alterar layout.
+* NÃO remover funcionalidades existentes.
+* Reutilizar os componentes atuais sempre que possível.
+* Apenas implementar e corrigir a lógica descrita abaixo.
+
+==================================================
+TELA INICIAL DA CAMPANHA
+========================
+
+Ao abrir o aplicativo, exibir:
+
+Nome do jogo
+
+Opções:
+
+▶ Continuar Campanha
+
+🆕 Nova Campanha
+
+==================================================
+CONTINUAR CAMPANHA
+==================
+
+Se existir campanha salva:
+
+Ao clicar em "Continuar Campanha", carregar exatamente o estado anterior.
+
+Exemplos:
+
+* Jogadores
+* Classes
+* Vida
+* Ouro
+* Cristais
+* Inventário
+* Equipamentos
+* Bosses
+* Histórico
+* Casas visitadas
+* Armaduras
+* Itens
+* Fase atual
+* Casa atual
+
+Tudo deve voltar exatamente como estava.
+
+==================================================
+NOVA CAMPANHA
+=============
+
+Permitir iniciar um novo jogo.
+
+Implementar de forma segura para evitar perda acidental de progresso.
+
+==================================================
+SALVAMENTO AUTOMÁTICO
+=====================
+
+Salvar automaticamente sempre que ocorrer:
+
+* Criação de jogador
+* Mudança de vida
+* Ganho de ouro
+* Ganho de cristais
+* Mudança de fase
+* Mudança de casa
+* Encontrar item
+* Encontrar carta
+* Encontrar armadura
+* Atualizar Boss
+* Derrotar Boss
+* Alterar inventário
+* Alterar equipamentos
+
+Não depender de botão manual.
+
+==================================================
+REGISTRAR ABSOLUTAMENTE TUDO
+============================
+
+Salvar:
+
+Jogadores:
+
+* Nome
+* Classe
+* Vida
+* Ouro
+* Cristais
+
+Exploração:
+
+* Casas visitadas
+* Eventos encontrados
+* Histórico
+
+Inventário:
+
+* Itens
+* Equipamentos
+* Consumíveis
+
+Bosses:
+
+* Vida atual
+* Status
+* Quem derrotou
+* Data da derrota
+
+Campanha:
+
+* Fase atual
+* Casa atual
+* Tempo jogado
+
+Armadura:
+
+* Peças encontradas
+* Progresso
+
+Nada deve ser perdido ao fechar o aplicativo.
+
+==================================================
+SISTEMA DE JOGADORES
+====================
+
+Cada jogador possui:
+
+* Nome
+* Classe
+* Vida
+* Ouro
+* Cristais
+* Inventário
+* Equipamentos
+* Histórico
+* Casas visitadas
+* Progresso da fase
+* Armadura lendária
+
+Cada jogador possui progresso independente.
+
+==================================================
+JOGADORES PERSONALIZADOS
+========================
+
+Na aba:
+
+Jogadores / Personagens
+
+Adicionar botão:
+
+➕ Criar Novo Jogador
+
+Permitir criar:
+
+* Nome
+* Classe
+* Descrição
+* Vida inicial
+* Cartas exclusivas
+* Itens exclusivos
+* Recompensas exclusivas
+* Habilidades exclusivas
+
+Exemplo:
+
+Nome:
+Caçador de Sombras
+
+Classe:
+Rastreador Sombrio
+
+Descrição:
+Especialista em caçar criaturas das trevas.
+
+==================================================
+CARTAS EXCLUSIVAS POR JOGADOR
+=============================
+
+Cada jogador deve possuir sua própria lista de cartas.
+
+Exemplos:
+
+Guerreiro:
+
+* Golpe Pesado
+* Defesa de Escudo
+* Fúria de Batalha
+
+Arqueira:
+
+* Flecha Dupla
+* Chuva de Flechas
+* Disparo Preciso
+
+Paladino:
+
+* Luz Divina
+* Cura Celestial
+* Escudo Sagrado
+
+Jogadores personalizados:
+
+Devem possuir cartas próprias definidas pelo criador.
+
+==================================================
+ITENS EXCLUSIVOS
+================
+
+Permitir criar itens exclusivos para determinados jogadores.
+
+Exemplo:
+
+Caçador de Sombras
+
+Item exclusivo:
+
+Arco das Trevas
+
+Somente ele pode receber ou equipar.
+
+==================================================
+RECOMPENSAS EXCLUSIVAS
+======================
+
+Cada jogador pode possuir recompensas específicas.
+
+Exemplo:
+
+Guerreiro:
+
+* Machado do Guerreiro
+* Escudo do Campeão
+
+Arqueira:
+
+* Arco Élfico
+* Aljava Real
+
+Caçador de Sombras:
+
+* Arco das Trevas
+* Capuz Sombrio
+
+==================================================
+TABULEIRO INDIVIDUAL
+====================
+
+Cada jogador possui seu próprio progresso.
+
+Exemplo:
+
+Eric abre Casa 1.
+
+Casa 1 fica marcada apenas para Eric.
+
+Maria Clara entra.
+
+Casa 1 continua fechada para Maria Clara.
+
+==================================================
+EVENTOS DAS CASAS
+=================
+
+Ao abrir uma casa:
+
+Sortear:
+
+* Armadilha
+* Tesouro
+* Ouro
+* Cristais
+* Carta
+* Evento especial
+* Monstro
+* Boss
+
+Cada jogador recebe sorteios independentes.
+
+Exemplo:
+
+Casa 10
+
+Eric:
+Armadilha
+
+Maria Clara:
+Tesouro
+
+João:
+Carta
+
+Pedro:
+Boss
+
+==================================================
+SISTEMA DE CARTAS NO TABULEIRO
+==============================
+
+Quando um jogador encontrar uma carta:
+
+Sortear apenas cartas disponíveis para aquele jogador.
+
+Exemplo:
+
+Eric:
+
+Recebe:
+Golpe Pesado
+
+Maria Clara:
+
+Recebe:
+Flecha Dupla
+
+Mesmo abrindo a mesma casa.
+
+==================================================
+ATAQUES DA FLORESTA DAS SOMBRAS
+===============================
+
+Arachna não ataca sozinha.
+
+Utilizar:
+
+🕷️ Enxame de Aranhas
+
+Com:
+
+* Filhotes
+* Aranhas médias
+* Aranhas venenosas
+* Aranhas caçadoras
+
+Arachna continua sendo o Boss principal.
+
+==================================================
+ATAQUES DA CIDADE ABANDONADA
+============================
+
+Escorpião Gigante não ataca sozinho.
+
+Utilizar:
+
+🦂 Enxame de Escorpiões
+
+Com:
+
+* Escorpiões pequenos
+* Escorpiões venenosos
+* Escorpiões das ruínas
+* Escorpiões gigantes menores
+
+Escorpião Gigante continua sendo o Boss principal.
+
+==================================================
+BOSSES GLOBAIS
+==============
+
+Bosses são compartilhados por todos os jogadores.
+
+Exemplo:
+
+Ervilson encontra:
+
+Arachna
+
+Vida:
+
+10/10
+
+Ervilson causa dano.
+
+Arachna:
+
+8/10
+
+Ervilson morre.
+
+Consequência:
+
+* Volta para o início da fase.
+* Boss continua com 8/10.
+
+Maria Clara encontra Arachna.
+
+Vida continua:
+
+8/10
+
+==================================================
+DERROTA DOS BOSSES
+==================
+
+Quando qualquer jogador derrotar um Boss:
+
+Registrar:
+
+* Jogador vencedor
+* Data
+* Hora
+* Golpe final
+
+Após derrotado:
+
+* Nunca reaparece.
+* Nunca é sorteado novamente.
+* Continua morto para todos os jogadores.
+
+Exemplo:
+
+Arachna
+
+Status:
+Derrotada
+
+Derrotada por:
+Ervilson
+
+==================================================
+SISTEMA DE RECOMPENSAS
+======================
+
+Ao criar um item:
+
+NÃO entregar automaticamente.
+
+O item entra primeiro no banco geral de recompensas.
+
+Depois posso entregar para qualquer jogador.
+
+==================================================
+BIOMA DOS ITENS
+===============
+
+Adicionar campo:
+
+Bioma de Origem
+
+Opções:
+
+🌲 Floresta das Sombras
+
+🏚️ Cidade Abandonada
+
+🏰 Castelo do Rei Sombrio
+
+Organizar automaticamente os itens por bioma.
+
+==================================================
+ARMADURA LENDÁRIA
+=================
+
+Criar sistema de armadura lendária.
+
+Peças:
+
+🛡️ Escudo
+
+⛑️ Elmo
+
+🧥 Peitoral
+
+🧤 Manoplas
+
+🥾 Botas
+
+⚔️ Arma
+
+==================================================
+CHANCES INDIVIDUAIS
+===================
+
+Cada jogador possui chances próprias para encontrar peças.
+
+Exemplo:
+
+Eric:
+
+Escudo:
+50%
+
+Maria Clara:
+
+Escudo:
+5%
+
+João:
+
+Escudo:
+0%
+
+Pedro:
+
+Escudo:
+20%
+
+==================================================
+FLORESTA DAS SOMBRAS
+====================
+
+Casas 1–24
+
+Chance máxima:
+
+50%
+
+Peças podem aparecer em qualquer casa.
+
+==================================================
+CIDADE ABANDONADA
+=================
+
+Casas 25–41
+
+Chance menor.
+
+==================================================
+CASTELO DO REI SOMBRIO
+======================
+
+Casas 42–68
+
+Chance extremamente rara.
+
+==================================================
+PROGRESSO DA ARMADURA
+=====================
+
+Cada jogador possui progresso próprio.
+
+Exemplo:
+
+Eric
+
+✔ Escudo
+✔ Elmo
+✖ Peitoral
+✖ Manoplas
+✔ Botas
+✖ Arma
+
+Progresso:
+50%
+
+==================================================
+HISTÓRICO INDIVIDUAL
+====================
+
+Registrar:
+
+* Casas visitadas
+* Eventos encontrados
+* Armadilhas sofridas
+* Tesouros encontrados
+* Cartas encontradas
+* Bosses encontrados
+* Bosses derrotados
+* Itens recebidos
+* Partes lendárias encontradas
+
+Históricos não podem se misturar.
+
+==================================================
+RECUPERAÇÃO COMPLETA
+====================
+
+Ao abrir uma campanha salva:
+
+O jogo deve parecer que nunca foi fechado.
+
+Tudo deve voltar exatamente ao ponto em que foi interrompido.
+
+Nenhum dado pode ser perdido.
+
+==================================================
+RELATÓRIO FINAL
+===============
+
+Após implementar:
+
+Informar:
+
+* Arquivos alterados
+* Componentes alterados
+* Novas tabelas/estruturas criadas
+* Novos estados globais criados
+* Sistema de salvamento implementado
+* Sistema de jogadores implementado
+* Sistema de bosses implementado
+* Sistema de armadura implementado
+* Sistema de cartas implementado
+
+Implementar efetivamente todas as funcionalidades acima utilizando a estrutura já existente do projeto.

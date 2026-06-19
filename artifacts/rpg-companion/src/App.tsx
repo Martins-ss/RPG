@@ -9,17 +9,31 @@ import BossesPanel from './components/BossesPanel';
 import RewardsPanel from './components/RewardsPanel';
 import LogPanel from './components/LogPanel';
 import TabuleiroPanel from './components/TabuleiroPanel';
+import CampaignScreen from './components/CampaignScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [campaignPhase, setCampaignPhase] = useState<'menu' | 'playing'>('menu');
   const store = useGameStore();
 
+  // Campaign start screen — always shown on fresh load
+  if (campaignPhase === 'menu') {
+    return (
+      <ErrorBoundary>
+        <CampaignScreen
+          hasSavedData={store.players.length > 0 || store.logs.length > 0}
+          playerCount={store.players.length}
+          defeatedBossCount={Object.keys(store.bossDefeats).length}
+          onContinue={() => setCampaignPhase('playing')}
+          onNewCampaign={() => { store.resetAll(); setCampaignPhase('playing'); }}
+        />
+      </ErrorBoundary>
+    );
+  }
+
   // Single switch render — avoids multiple consecutive `condition && <Component>`
-  // siblings in the JSX tree. Multiple `&&` conditionals produce a series of
-  // `false | ReactElement` nodes that can confuse React's DOM reconciler on
-  // mobile browsers, causing "insertBefore: node is not a child" errors when
-  // rapid tab switches cause nodes to shift positions in the fiber tree.
+  // siblings causing React reconciliation errors on mobile browsers.
   const renderPanel = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -37,6 +51,9 @@ export default function App() {
             addPlayer={store.addPlayer}
             removePlayer={store.removePlayer}
             adjustHealth={store.adjustHealth}
+            adjustGold={store.adjustGold}
+            adjustCrystals={store.adjustCrystals}
+            toggleArmorPiece={store.toggleArmorPiece}
             addXP={store.addXP}
             setLevel={store.setLevel}
           />
@@ -55,8 +72,10 @@ export default function App() {
             addLog={store.addLog}
             adjustHealth={store.adjustHealth}
             bossHealths={store.bossHealths}
+            bossDefeats={store.bossDefeats}
             adjustBossHealth={store.adjustBossHealth}
             resetBossHealth={store.resetBossHealth}
+            defeatBoss={store.defeatBoss}
           />
         );
       case 'rewards':
@@ -89,7 +108,7 @@ export default function App() {
           onTabChange={setActiveTab}
           playerCount={store.players.length}
         />
-        <main className="max-w-2xl mx-auto px-4 py-4 pb-8">
+        <main className="max-w-2xl mx-auto px-4 py-4 pb-24">
           {renderPanel()}
         </main>
       </div>

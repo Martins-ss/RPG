@@ -1,12 +1,60 @@
-import { Phase, Boss, Monster, InventoryItem, ItemRarity } from './types';
+import { Phase, Boss, Monster, InventoryItem, ItemRarity, PlayerClass } from './types';
 import { v4 as uuidv4 } from 'uuid';
 
 export const CLASS_INFO: Record<string, { emoji: string; color: string; description: string }> = {
   Guerreiro: { emoji: '⚔️', color: '#ef4444', description: 'Mestre das armas, força bruta e resistência em combate' },
-  Arqueiro: { emoji: '🏹', color: '#22c55e', description: 'Ágil e preciso, ataca de longa distância com arco' },
-  Mago: { emoji: '🔮', color: '#8b5cf6', description: 'Domina as artes arcanas e magias poderosas' },
-  Paladino: { emoji: '🛡️', color: '#3b82f6', description: 'Guerreiro sagrado, protege aliados com fé divina' },
+  Arqueiro:  { emoji: '🏹', color: '#22c55e', description: 'Ágil e preciso, ataca de longa distância com arco' },
+  Mago:      { emoji: '🔮', color: '#8b5cf6', description: 'Domina as artes arcanas e magias poderosas' },
+  Paladino:  { emoji: '🛡️', color: '#3b82f6', description: 'Guerreiro sagrado, protege aliados com fé divina' },
   Assassino: { emoji: '🗡️', color: '#f59e0b', description: 'Furtivo e mortal, ataca pelas sombras sem ser visto' },
+};
+
+export const CLASS_CARDS: Record<PlayerClass, { name: string; description: string }[]> = {
+  Guerreiro: [
+    { name: 'Golpe Pesado',     description: 'Causa 2 de dano a um inimigo adjacente.' },
+    { name: 'Defesa de Escudo', description: 'Bloqueia 1 de dano no próximo turno.' },
+    { name: 'Fúria de Batalha', description: 'Aumenta ataque em 1 por 3 turnos seguidos.' },
+    { name: 'Investida',        description: 'Avança uma casa e causa 1 de dano ao passar.' },
+    { name: 'Berserk',          description: 'Dobra o dano causado mas perde 1 de vida.' },
+    { name: 'Golpe Giratório',  description: 'Causa 1 de dano a todos os inimigos próximos.' },
+    { name: 'Provocação',       description: 'Força todos os inimigos a atacar você por 1 turno.' },
+  ],
+  Arqueiro: [
+    { name: 'Flecha Dupla',       description: 'Dispara 2 flechas causando 1 de dano cada.' },
+    { name: 'Chuva de Flechas',   description: 'Causa 1 de dano a todos os inimigos na área.' },
+    { name: 'Disparo Preciso',    description: 'Causa 2 de dano ignorando qualquer defesa.' },
+    { name: 'Flecha Envenenada',  description: 'Envenena o alvo: 1 de dano por turno por 3 turnos.' },
+    { name: 'Olho de Águia',      description: 'O próximo ataque nunca erra e causa +1 de dano.' },
+    { name: 'Recuo Veloz',        description: 'Recua uma casa sem custo e causa 1 de dano.' },
+    { name: 'Armadilha de Cipós', description: 'Prende um inimigo por 1 turno.' },
+  ],
+  Mago: [
+    { name: 'Bola de Fogo',   description: 'Causa 2 de dano a um inimigo.' },
+    { name: 'Gelo Eterno',    description: 'Congela um inimigo por 1 turno completo.' },
+    { name: 'Raio Arcano',    description: 'Causa 1 de dano a dois inimigos diferentes.' },
+    { name: 'Escudo Mágico',  description: 'Bloqueia 2 de dano pelo próximo turno.' },
+    { name: 'Teletransporte', description: 'Move para qualquer casa visível sem custo.' },
+    { name: 'Drenar Mana',    description: 'Causa 1 de dano e recupera 1 de vida própria.' },
+    { name: 'Tempestade',     description: 'Causa 1 de dano a todos os inimigos no mapa.' },
+  ],
+  Paladino: [
+    { name: 'Luz Divina',      description: 'Causa 1 de dano e cura 1 de vida própria.' },
+    { name: 'Cura Celestial',  description: 'Restaura 2 de vida de qualquer aliado.' },
+    { name: 'Escudo Sagrado',  description: 'Todos os aliados adjacentes bloqueiam 1 de dano.' },
+    { name: 'Julgamento',      description: 'Causa 2 de dano a inimigos corrompidos pelo Rei Sombrio.' },
+    { name: 'Aura Protetora',  description: 'Reduz todo dano sofrido em 1 por 2 turnos.' },
+    { name: 'Ressurreição',    description: 'Restaura 1 de vida a um aliado com 0 de vida.' },
+    { name: 'Benção Sagrada',  description: 'Aliados ganham +1 de ataque por 2 turnos.' },
+  ],
+  Assassino: [
+    { name: 'Golpe Sorrateiro', description: 'Causa 2 de dano sem alertar outros inimigos próximos.' },
+    { name: 'Sombra Mortal',    description: 'Torna-se invisível por 1 turno completo.' },
+    { name: 'Veneno de Aranha', description: 'Aplica veneno que causa 1 de dano por turno por 3 turnos.' },
+    { name: 'Desaparecer',      description: 'Foge de qualquer combate sem custo algum.' },
+    { name: 'Ataque Fatal',     description: 'Causa 3 de dano mas perde 1 de vida própria.' },
+    { name: 'Faca nas Costas',  description: 'Causa 2 de dano a um inimigo distraído ou flanqueado.' },
+    { name: 'Névoa Sombria',    description: 'Cria névoa que cega todos os inimigos por 1 turno.' },
+  ],
 };
 
 export const MONSTERS: Monster[] = [
@@ -36,7 +84,7 @@ export const BOSSES: Boss[] = [
     phase: 'Floresta das Sombras',
     health: 10,
     maxHealth: 10,
-    ability: 'Teia da Perdição — Prende um jogador por 1 rodada, causando 1 de dano',
+    ability: '🕷️ Enxame de Aranhas — Convoca filhotes, aranhas médias, aranhas venenosas e aranhas caçadoras. Todos os jogadores sofrem 1 de dano. Arachna se cura 1 de vida.',
     story: 'Nas profundezas da Floresta das Sombras, Arachna governa um exército de aranhas sombrias. Outrora uma druida que buscou poder proibido, foi transformada em uma aranha colossal pelo cristal vermelho. Seus olhos brilham com a mesma luz carmesim que corrompe a floresta.',
     reward: {
       id: uuidv4(),
@@ -54,7 +102,7 @@ export const BOSSES: Boss[] = [
     phase: 'Cidade Abandonada',
     health: 15,
     maxHealth: 15,
-    ability: 'Ferrão Sombrio — Envenena todos os jogadores, causando 1 de dano por rodada durante 2 rodadas',
+    ability: '🦂 Enxame de Escorpiões — Convoca escorpiões pequenos, venenosos, das ruínas e gigantes menores. Envenena todos os jogadores causando 1 de dano por rodada durante 2 rodadas.',
     story: 'Skorrath era o general que defendia a cidade antes da queda. Quando o Rei Sombrio corrompeu a terra, Skorrath foi transformado em um escorpião gigante, condenado a guardar as ruínas para sempre. Seu veneno é tão potente que corrói até pedra.',
     reward: {
       id: uuidv4(),
@@ -72,7 +120,7 @@ export const BOSSES: Boss[] = [
     phase: 'Castelo do Rei Sombrio',
     health: 25,
     maxHealth: 25,
-    ability: 'Cristal da Ruína — Causa 2 de dano a todos os jogadores e cura 3 de vida própria',
+    ability: '👑 Cristal da Ruína — Causa 2 de dano a todos os jogadores e se cura 3 de vida. A escuridão engole o campo de batalha.',
     story: 'O Rei Sombrio governou estas terras com justiça há milênios, até encontrar o Cristal Vermelho nas profundezas do mundo. O cristal consumiu sua alma e transformou seu reino em um pesadelo eterno. Agora ele aguarda em seu trono, alimentando-se do medo dos que ousam desafiá-lo. Derrotá-lo é a única forma de libertar o reino.',
     reward: {
       id: uuidv4(),
@@ -176,32 +224,32 @@ export const REWARD_TEMPLATES: Record<string, Omit<InventoryItem, 'id'>[]> = {
 
 export function getRarityColor(rarity: ItemRarity): string {
   switch (rarity) {
-    case 'Comum': return '#9ca3af';
-    case 'Raro': return '#3b82f6';
-    case 'Épico': return '#8b5cf6';
+    case 'Comum':    return '#9ca3af';
+    case 'Raro':     return '#3b82f6';
+    case 'Épico':    return '#8b5cf6';
     case 'Lendário': return '#f59e0b';
-    case 'Mítico': return '#ef4444';
-    default: return '#9ca3af';
+    case 'Mítico':   return '#ef4444';
+    default:         return '#9ca3af';
   }
 }
 
 export function getRarityBg(rarity: ItemRarity): string {
   switch (rarity) {
-    case 'Comum': return 'rgba(156, 163, 175, 0.1)';
-    case 'Raro': return 'rgba(59, 130, 246, 0.1)';
-    case 'Épico': return 'rgba(139, 92, 246, 0.1)';
+    case 'Comum':    return 'rgba(156, 163, 175, 0.1)';
+    case 'Raro':     return 'rgba(59, 130, 246, 0.1)';
+    case 'Épico':    return 'rgba(139, 92, 246, 0.1)';
     case 'Lendário': return 'rgba(245, 158, 11, 0.1)';
-    case 'Mítico': return 'rgba(239, 68, 68, 0.1)';
-    default: return 'rgba(156, 163, 175, 0.1)';
+    case 'Mítico':   return 'rgba(239, 68, 68, 0.1)';
+    default:         return 'rgba(156, 163, 175, 0.1)';
   }
 }
 
 export function getItemEmoji(type: string): string {
   switch (type) {
-    case 'ouro': return '💰';
+    case 'ouro':   return '💰';
     case 'cristal': return '💎';
-    case 'carta': return '🃏';
-    case 'item': return '✨';
-    default: return '📦';
+    case 'carta':  return '🃏';
+    case 'item':   return '✨';
+    default:       return '📦';
   }
 }

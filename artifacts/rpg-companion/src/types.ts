@@ -4,6 +4,29 @@ export type ItemRarity = 'Comum' | 'Raro' | 'Épico' | 'Lendário' | 'Mítico';
 
 export type PhaseName = 'Floresta das Sombras' | 'Cidade Abandonada' | 'Castelo do Rei Sombrio';
 
+export type ArmorPieceId = 'escudo' | 'elmo' | 'peitoral' | 'manoplas' | 'botas' | 'arma';
+
+export const ARMOR_PIECES: { id: ArmorPieceId; label: string; emoji: string }[] = [
+  { id: 'escudo',   label: 'Escudo',   emoji: '🛡️' },
+  { id: 'elmo',     label: 'Elmo',     emoji: '⛑️' },
+  { id: 'peitoral', label: 'Peitoral', emoji: '🧥' },
+  { id: 'manoplas', label: 'Manoplas', emoji: '🧤' },
+  { id: 'botas',    label: 'Botas',    emoji: '🥾' },
+  { id: 'arma',     label: 'Arma',     emoji: '⚔️' },
+];
+
+export type ArmorProgress = Record<ArmorPieceId, boolean>;
+
+export const DEFAULT_ARMOR: ArmorProgress = {
+  escudo: false, elmo: false, peitoral: false,
+  manoplas: false, botas: false, arma: false,
+};
+
+export interface BossDefeat {
+  defeatedBy: string;
+  defeatedAt: number;
+}
+
 export interface InventoryItem {
   id: string;
   name: string;
@@ -24,6 +47,9 @@ export interface Player {
   xp: number;
   xpToNext: number;
   inventory: InventoryItem[];
+  gold: number;
+  crystals: number;
+  armor: ArmorProgress;
   createdAt: number;
 }
 

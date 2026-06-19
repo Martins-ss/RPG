@@ -1,10 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Player, GameLog, InventoryItem } from './types';
+import { Player, GameLog, InventoryItem, ArmorPieceId, ArmorProgress, BossDefeat, DEFAULT_ARMOR } from './types';
 import { xpForLevel, BOSSES } from './gameData';
 import { v4 as uuidv4 } from 'uuid';
 
-const STORAGE_KEY = 'reino-rei-sombrio';
-const BOSS_STORAGE_KEY = 'reino-rei-sombrio-bosses';
+const STORAGE_KEY         = 'reino-rei-sombrio';
+const BOSS_STORAGE_KEY    = 'reino-rei-sombrio-bosses';
+const BOSS_DEFEATS_KEY    = 'reino-rei-sombrio-boss-derrotas';
+const TABULEIRO_HIST_KEY  = 'reino-rei-sombrio-tabuleiro-historico';
 
 interface GameState {
   players: Player[];
@@ -14,6 +16,10 @@ interface GameState {
 interface BossHealthState {
   [bossName: string]: number;
 }
+
+type BossDefeatsState = Record<string, BossDefeat>;
+
+// ─── Validators ───────────────────────────────────────────────────────────────
 
 function isValidPlayer(p: unknown): p is Player {
   if (!p || typeof p !== 'object') return false;
@@ -42,45 +48,44 @@ function isValidLog(log: unknown): log is GameLog {
   );
 }
 
+// ─── Load / Save ─────────────────────────────────────────────────────────────
+
+function migratePlayer(p: Player): Player {
+  return {
+    ...p,
+    maxHealth: p.maxHealth || 5,
+    inventory: Array.isArray(p.inventory) ? p.inventory : [],
+    health: Math.min(Math.max(0, p.health || 0), p.maxHealth || 5),
+    level: Math.min(Math.max(1, p.level || 1), 68),
+    gold: typeof p.gold === 'number' ? Math.max(0, p.gold) : 0,
+    crystals: typeof p.crystals === 'number' ? Math.max(0, p.crystals) : 0,
+    armor: (p.armor && typeof p.armor === 'object') ? { ...DEFAULT_ARMOR, ...p.armor } : { ...DEFAULT_ARMOR },
+  };
+}
+
 function loadState(): GameState {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (!parsed || typeof parsed !== 'object') {
-        console.warn('[Store] Dados inválidos no localStorage, resetando...');
-        return { players: [], logs: [] };
-      }
+      if (!parsed || typeof parsed !== 'object') return { players: [], logs: [] };
       const players: Player[] = Array.isArray(parsed.players)
-        ? parsed.players.filter(isValidPlayer).map((p: Player) => ({
-            ...p,
-            maxHealth: p.maxHealth || 5,
-            inventory: Array.isArray(p.inventory) ? p.inventory : [],
-            health: Math.min(Math.max(0, p.health || 0), 5),
-            level: Math.min(Math.max(1, p.level || 1), 68),
-          }))
+        ? parsed.players.filter(isValidPlayer).map(migratePlayer)
         : [];
       const logs: GameLog[] = Array.isArray(parsed.logs)
         ? parsed.logs.filter(isValidLog).slice(0, 200)
         : [];
-      console.log(`[Store] Carregado: ${players.length} jogadores, ${logs.length} logs`);
       return { players, logs };
     }
   } catch (error) {
     console.error('[Store] Erro ao carregar localStorage:', error);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {}
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
   }
   return { players: [], logs: [] };
 }
 
 function saveState(state: GameState) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (error) {
-    console.error('[Store] Erro ao salvar localStorage:', error);
-  }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
 }
 
 function loadBossHealths(): BossHealthState {
@@ -90,7 +95,6 @@ function loadBossHealths(): BossHealthState {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && typeof parsed === 'object') {
-        // Merge: saved values take precedence, but ensure every current boss has a valid numeric entry
         const merged: BossHealthState = { ...defaults };
         for (const bossName of Object.keys(defaults)) {
           const savedVal = parsed[bossName];
@@ -101,27 +105,37 @@ function loadBossHealths(): BossHealthState {
         return merged;
       }
     }
-  } catch (error) {
-    console.error('[Store] Erro ao carregar boss health:', error);
-  }
+  } catch {}
   return defaults;
 }
 
 function saveBossHealths(healths: BossHealthState) {
-  try {
-    localStorage.setItem(BOSS_STORAGE_KEY, JSON.stringify(healths));
-  } catch (error) {
-    console.error('[Store] Erro ao salvar boss health:', error);
-  }
+  try { localStorage.setItem(BOSS_STORAGE_KEY, JSON.stringify(healths)); } catch {}
 }
+
+function loadBossDefeats(): BossDefeatsState {
+  try {
+    const saved = localStorage.getItem(BOSS_DEFEATS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+  return {};
+}
+
+function saveBossDefeats(d: BossDefeatsState) {
+  try { localStorage.setItem(BOSS_DEFEATS_KEY, JSON.stringify(d)); } catch {}
+}
+
+// ─── Store Hook ───────────────────────────────────────────────────────────────
 
 export function useGameStore() {
   const [state, setState] = useState<GameState>(loadState);
   const [bossHealths, setBossHealths] = useState<BossHealthState>(loadBossHealths);
+  const [bossDefeats, setBossDefeats] = useState<BossDefeatsState>(loadBossDefeats);
 
-  useEffect(() => {
-    saveBossHealths(bossHealths);
-  }, [bossHealths]);
+  useEffect(() => { saveBossHealths(bossHealths); }, [bossHealths]);
 
   const updateState = useCallback((updater: (prev: GameState) => GameState) => {
     setState(prev => {
@@ -131,13 +145,18 @@ export function useGameStore() {
     });
   }, []);
 
+  // ─── Logs ──────────────────────────────────────────────────────────────────
+
   const addLog = useCallback((message: string, type: GameLog['type'] = 'info') => {
     const log: GameLog = { id: uuidv4(), timestamp: Date.now(), message, type };
-    updateState(prev => ({
-      ...prev,
-      logs: [log, ...prev.logs].slice(0, 200),
-    }));
+    updateState(prev => ({ ...prev, logs: [log, ...prev.logs].slice(0, 200) }));
   }, [updateState]);
+
+  const clearLogs = useCallback(() => {
+    updateState(prev => ({ ...prev, logs: [] }));
+  }, [updateState]);
+
+  // ─── Players ───────────────────────────────────────────────────────────────
 
   const addPlayer = useCallback((name: string, playerClass: Player['playerClass']) => {
     const player: Player = {
@@ -150,6 +169,9 @@ export function useGameStore() {
       xp: 0,
       xpToNext: xpForLevel(1),
       inventory: [],
+      gold: 0,
+      crystals: 0,
+      armor: { ...DEFAULT_ARMOR },
       createdAt: Date.now(),
     };
     updateState(prev => ({ ...prev, players: [...prev.players, player] }));
@@ -163,7 +185,9 @@ export function useGameStore() {
       return {
         ...prev,
         players: prev.players.filter(p => p.id !== id),
-        logs: player ? [{ id: uuidv4(), timestamp: Date.now(), message: `💀 ${player.name} foi removido da aventura.`, type: 'death' as const }, ...prev.logs].slice(0, 200) : prev.logs,
+        logs: player
+          ? [{ id: uuidv4(), timestamp: Date.now(), message: `💀 ${player.name} foi removido da aventura.`, type: 'death' as const }, ...prev.logs].slice(0, 200)
+          : prev.logs,
       };
     });
   }, [updateState]);
@@ -179,10 +203,11 @@ export function useGameStore() {
     updateState(prev => {
       const player = prev.players.find(p => p.id === id);
       if (!player) return prev;
-      const newHealth = Math.max(0, Math.min(5, player.health + amount));
+      const max = player.maxHealth || 5;
+      const newHealth = Math.max(0, Math.min(max, player.health + amount));
       const msg = amount > 0
-        ? `💚 ${player.name} recuperou ${amount} de vida (${newHealth}/5)`
-        : `❤️‍🩹 ${player.name} perdeu ${Math.abs(amount)} de vida (${newHealth}/5)`;
+        ? `💚 ${player.name} recuperou ${amount} de vida (${newHealth}/${max})`
+        : `❤️‍🩹 ${player.name} perdeu ${Math.abs(amount)} de vida (${newHealth}/${max})`;
       const logType = newHealth === 0 ? 'death' : amount > 0 ? 'info' : 'combat';
       const deathMsg = newHealth === 0 ? `💀 ${player.name} caiu em combate!` : '';
       const newLogs: GameLog[] = [
@@ -194,6 +219,59 @@ export function useGameStore() {
         ...prev,
         players: prev.players.map(p => p.id === id ? { ...p, health: newHealth } : p),
         logs: newLogs,
+      };
+    });
+  }, [updateState]);
+
+  const adjustGold = useCallback((id: string, amount: number) => {
+    updateState(prev => {
+      const player = prev.players.find(p => p.id === id);
+      if (!player) return prev;
+      const newGold = Math.max(0, (player.gold ?? 0) + amount);
+      return {
+        ...prev,
+        players: prev.players.map(p => p.id === id ? { ...p, gold: newGold } : p),
+        logs: amount !== 0 ? [
+          { id: uuidv4(), timestamp: Date.now(), message: `💰 ${player.name} ${amount >= 0 ? 'ganhou' : 'gastou'} ${Math.abs(amount)} de ouro (total: ${newGold})`, type: 'reward' as GameLog['type'] },
+          ...prev.logs,
+        ].slice(0, 200) : prev.logs,
+      };
+    });
+  }, [updateState]);
+
+  const adjustCrystals = useCallback((id: string, amount: number) => {
+    updateState(prev => {
+      const player = prev.players.find(p => p.id === id);
+      if (!player) return prev;
+      const newCrystals = Math.max(0, (player.crystals ?? 0) + amount);
+      return {
+        ...prev,
+        players: prev.players.map(p => p.id === id ? { ...p, crystals: newCrystals } : p),
+        logs: amount !== 0 ? [
+          { id: uuidv4(), timestamp: Date.now(), message: `💎 ${player.name} ${amount >= 0 ? 'ganhou' : 'gastou'} ${Math.abs(amount)} cristal${Math.abs(amount) !== 1 ? 'is' : ''} (total: ${newCrystals})`, type: 'reward' as GameLog['type'] },
+          ...prev.logs,
+        ].slice(0, 200) : prev.logs,
+      };
+    });
+  }, [updateState]);
+
+  const toggleArmorPiece = useCallback((id: string, piece: ArmorPieceId, found: boolean) => {
+    updateState(prev => {
+      const player = prev.players.find(p => p.id === id);
+      if (!player) return prev;
+      const currentArmor: ArmorProgress = player.armor ?? { ...DEFAULT_ARMOR };
+      const newArmor = { ...currentArmor, [piece]: found };
+      const foundCount = Object.values(newArmor).filter(Boolean).length;
+      const pieceEmoji: Record<ArmorPieceId, string> = { escudo: '🛡️', elmo: '⛑️', peitoral: '🧥', manoplas: '🧤', botas: '🥾', arma: '⚔️' };
+      return {
+        ...prev,
+        players: prev.players.map(p => p.id === id ? { ...p, armor: newArmor } : p),
+        logs: [
+          { id: uuidv4(), timestamp: Date.now(), message: found
+            ? `${pieceEmoji[piece]} ${player.name} encontrou uma peça da Armadura Lendária! (${foundCount}/6)`
+            : `${pieceEmoji[piece]} Peça de armadura removida de ${player.name}`, type: 'reward' as GameLog['type'] },
+          ...prev.logs,
+        ].slice(0, 200),
       };
     });
   }, [updateState]);
@@ -214,11 +292,7 @@ export function useGameStore() {
         levelUps.push(`⬆️ ${player.name} subiu para o nível ${newLevel}!`);
       }
 
-      if (newLevel >= 68) {
-        newLevel = 68;
-        newXP = 0;
-        newXpToNext = 0;
-      }
+      if (newLevel >= 68) { newLevel = 68; newXP = 0; newXpToNext = 0; }
 
       const newLogs: GameLog[] = [
         { id: uuidv4(), timestamp: Date.now(), message: `✨ ${player.name} ganhou ${amount} XP!`, type: 'reward' as GameLog['type'] },
@@ -306,6 +380,8 @@ export function useGameStore() {
     });
   }, [updateState]);
 
+  // ─── Bosses ────────────────────────────────────────────────────────────────
+
   const adjustBossHealth = useCallback((bossName: string, amount: number, maxHealth: number) => {
     setBossHealths(prev => {
       const currentHealth = prev[bossName] ?? maxHealth;
@@ -323,20 +399,32 @@ export function useGameStore() {
     addLog(`🔄 ${bossName} teve sua vida restaurada!`, 'boss');
   }, [addLog]);
 
+  const defeatBoss = useCallback((bossName: string, defeatedBy: string) => {
+    const defeat: BossDefeat = { defeatedBy, defeatedAt: Date.now() };
+    setBossDefeats(prev => {
+      const next = { ...prev, [bossName]: defeat };
+      saveBossDefeats(next);
+      return next;
+    });
+    setBossHealths(prev => ({ ...prev, [bossName]: 0 }));
+    addLog(`☠️ ${bossName} foi DERROTADO por ${defeatedBy}! A vitória é nossa!`, 'boss');
+  }, [addLog]);
+
   const getBossHealth = useCallback((bossName: string, maxHealth: number): number => {
     return bossHealths[bossName] ?? maxHealth;
   }, [bossHealths]);
 
-  const clearLogs = useCallback(() => {
-    updateState(prev => ({ ...prev, logs: [] }));
-  }, [updateState]);
+  // ─── Campaign ──────────────────────────────────────────────────────────────
 
   const resetAll = useCallback(() => {
     updateState(() => ({ players: [], logs: [] }));
     setBossHealths(Object.fromEntries(BOSSES.map(b => [b.name, b.maxHealth])));
+    setBossDefeats({});
     try {
       localStorage.removeItem(BOSS_STORAGE_KEY);
+      localStorage.removeItem(BOSS_DEFEATS_KEY);
       localStorage.removeItem('reino-rei-sombrio-tabuleiro');
+      localStorage.removeItem(TABULEIRO_HIST_KEY);
     } catch {}
   }, [updateState]);
 
@@ -344,10 +432,14 @@ export function useGameStore() {
     players: state.players,
     logs: state.logs,
     bossHealths,
+    bossDefeats,
     addPlayer,
     removePlayer,
     updatePlayer,
     adjustHealth,
+    adjustGold,
+    adjustCrystals,
+    toggleArmorPiece,
     addXP,
     setLevel,
     addItemToPlayer,
@@ -357,6 +449,7 @@ export function useGameStore() {
     resetAll,
     adjustBossHealth,
     resetBossHealth,
+    defeatBoss,
     getBossHealth,
   };
 }

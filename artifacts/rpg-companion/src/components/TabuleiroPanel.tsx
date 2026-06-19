@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
 import { RotateCcw, BookOpen, User, Trash2 } from 'lucide-react';
-import { PhaseName, BoardCellType, Player } from '../types';
+import { PhaseName, BoardCellType, Player, PlayerClass } from '../types';
 import Modal from './Modal';
-import { CLASS_INFO } from '../gameData';
+import { CLASS_INFO, CLASS_CARDS } from '../gameData';
 import { v4 as uuidv4 } from 'uuid';
 
 // ─── Storage ────────────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ const PHASE_DEFS: { name: PhaseName; emoji: string; color: string; cells: number
   { name: 'Castelo do Rei Sombrio', emoji: '🏰', color: '#dc2626', cells: 27, range: [42, 68] },
 ];
 
-// ─── Event pools (same content as before, now used for random draw) ───────────
+// ─── Event pools ─────────────────────────────────────────────────────────────
 
 const CELL_CONTENT: Record<PhaseName, Record<BoardCellType, { content: string; description: string; reward?: string; penalty?: string }[]>> = {
   'Floresta das Sombras': {
@@ -49,8 +49,7 @@ const CELL_CONTENT: Record<PhaseName, Record<BoardCellType, { content: string; d
     armadilha: [{ content: 'Teia de Aranha', description: 'Uma imensa teia cobre o caminho!', penalty: '-1 vida ao jogador que pisar' },
                 { content: 'Raízes Vivas', description: 'As raízes se movem e tentam prender os pés.', penalty: 'Perde 1 turno' },
                 { content: 'Esporos Tóxicos', description: 'Cogumelos liberam esporos venenosos.', penalty: '-1 vida a todos' }],
-    carta:     [{ content: 'Carta da Floresta', description: 'Uma carta mágica encontrada numa árvore oca.', reward: 'Carta Comum x1' },
-                { content: 'Carta do Druida', description: 'Pertencia a um druida que habitava a floresta.', reward: 'Carta Rara x1' }],
+    carta:     [{ content: 'Carta da Floresta', description: 'Uma carta mágica encontrada numa árvore oca.', reward: 'Carta x1' }],
     tesouro:   [{ content: 'Baú Sombrio', description: 'Um baú escondido sob uma raiz.', reward: 'Item Raro + 20 Ouro' },
                 { content: 'Ninho de Aranha', description: 'Um ninho abandonado com brilhos de cristal.', reward: 'Cristal x2' }],
     ouro:      [{ content: 'Moedas Escondidas', description: 'Moedas antigas escondidas entre folhas.', reward: '+15 Ouro' },
@@ -65,17 +64,16 @@ const CELL_CONTENT: Record<PhaseName, Record<BoardCellType, { content: string; d
     vazia:     [{ content: 'Rua Vazia', description: 'As ruas da cidade estão desertas e silenciosas.' },
                 { content: 'Prédio em Ruínas', description: 'Apenas escombros restaram do que foi um dia glorioso.' }],
     armadilha: [{ content: 'Piso Desmoronante', description: 'O piso cede sob o peso dos aventureiros!', penalty: '-1 vida ao jogador da frente' },
-                { content: 'Emboscada de Escorpiões', description: 'Escorpiões saem das sombras!', penalty: '-1 vida + veneno (1 dano/rodada)' },
+                { content: 'Emboscada de Escorpiões', description: '🦂 Escorpiões saem das sombras!', penalty: '-1 vida + veneno (1 dano/rodada)' },
                 { content: 'Portão Selado', description: 'Um portão mágico bloqueia a passagem.', penalty: 'Perde 2 turnos para abrir' },
                 { content: 'Veneno no Ar', description: 'O ar cheira a enxofre e podridão.', penalty: '-1 vida a todos' }],
-    carta:     [{ content: 'Diário do General', description: 'O diário do general Skorrath antes da queda.', reward: 'Carta Épica x1' },
-                { content: 'Pergaminho Antigo', description: 'Contém feitiços da cidade dourada.', reward: 'Carta Rara x2' }],
+    carta:     [{ content: 'Carta Antiga', description: 'Uma carta encontrada nas ruínas da cidade.', reward: 'Carta x1' }],
     tesouro:   [{ content: 'Cofre do Mercador', description: 'O cofre de um rico mercador que tentou fugir.', reward: 'Item Épico + 50 Ouro' },
                 { content: 'Armaria Saqueada', description: 'Ainda restam armas de qualidade.', reward: 'Item Raro x2' }],
     ouro:      [{ content: 'Saque das Ruínas', description: 'Ouro espalhado entre os escombros.', reward: '+30 Ouro' },
                 { content: 'Cofre Arrombado', description: 'Alguém chegou antes, mas deixou algumas moedas.', reward: '+40 Ouro' }],
     cristal:   [{ content: 'Cristal Médio', description: 'Cristais vermelhos incrustados nas paredes.', reward: 'Cristal Médio x2' }],
-    monstro:   [{ content: 'Escorpião Gigante', description: 'Um escorpião do tamanho de um cavalo aparece!', penalty: 'Combate! -1 vida (pode ser evitado com -2 turnos)' },
+    monstro:   [{ content: '🦂 Escorpião Gigante', description: 'Um escorpião do tamanho de um cavalo aparece!', penalty: 'Combate! -1 vida' },
                 { content: 'Patrulha Sombria', description: 'Soldados corrompidos patrulham a área.', penalty: '-2 vida ao grupo ou recuar 1 casa' }],
     especial:  [{ content: '🏛️ Biblioteca Secreta', description: 'Uma biblioteca escondida com conhecimentos proibidos!', reward: 'Carta Lendária x1 + XP extra' },
                 { content: '⚗️ Laboratório do Alquimista', description: 'Poções e ingredientes mágicos ainda intactos.', reward: 'Poção de Cura x2 + Cristal x1' }],
@@ -88,8 +86,7 @@ const CELL_CONTENT: Record<PhaseName, Record<BoardCellType, { content: string; d
                 { content: 'Espelhos da Ilusão', description: 'Os espelhos criam cópias dos inimigos!', penalty: 'Combate duplo: -2 vida total' },
                 { content: 'Trono Amaldiçoado', description: 'Uma força invisível empurra para o trono.', penalty: '-2 vida ao jogador mais próximo' },
                 { content: 'Corredor Final', description: 'O último teste antes do Boss!', penalty: '-3 vida possível (role dado)' }],
-    carta:     [{ content: 'Carta do Rei Sombrio', description: 'A mais poderosa de todas as cartas do reino.', reward: 'Carta Mítica x1' },
-                { content: 'Carta da Sombra', description: 'Invoca a escuridão absoluta para proteger.', reward: 'Carta Lendária x1' }],
+    carta:     [{ content: 'Carta do Castelo', description: 'Uma carta rara encontrada nos aposentos do Rei.', reward: 'Carta x1' }],
     tesouro:   [{ content: 'Tesouro do Rei', description: 'O tesouro pessoal do Rei Sombrio!', reward: 'Item Mítico + 100 Ouro + Cristal x5' },
                 { content: 'Câmara Secreta', description: 'Uma câmara oculta atrás de um espelho.', reward: 'Item Lendário x1 + Cristal Grande x3' }],
     ouro:      [{ content: 'Câmara do Tesouro', description: 'Pilhas de ouro negro do reino corrompido.', reward: '+75 Ouro' },
@@ -97,86 +94,58 @@ const CELL_CONTENT: Record<PhaseName, Record<BoardCellType, { content: string; d
     cristal:   [{ content: 'Cristal Grande', description: 'Cristais imensos pulsando com poder infinito.', reward: 'Cristal Grande x5' }],
     monstro:   [{ content: 'Servo do Rei Sombrio', description: 'Um servo incorruptível defende o castelo!', penalty: 'Combate intenso! -2 vida ou fuga com -3 turnos' },
                 { content: 'Guarda da Torre', description: 'O mais temido dos guardas do Rei!', penalty: '-3 vida ao grupo ou custo alto para passar' }],
-    especial:  [{ content: '👑 Sala do Trono', description: 'A sala do trono do Rei Sombrio aguarda...', reward: 'Desafio especial: vencer = Item Mítico + vitória!' },
-                { content: '🔮 Orbe do Destino', description: 'O orbe do Rei revela os segredos do reino.', reward: 'Revelar 3 casas aleatórias + XP enorme' }],
+    especial:  [{ content: '👑 Sala do Trono', description: 'A sala do trono do Rei Sombrio aguarda...', reward: 'Desafio especial: vencer = Item Mítico!' },
+                { content: '🔮 Orbe do Destino', description: 'O orbe do Rei revela os segredos do reino.', reward: 'Revelar 3 casas + XP enorme' }],
   },
 };
 
-// Type weights per phase — controls how often each type appears
+// Type weights per phase
 const TYPE_POOL: Record<PhaseName, BoardCellType[]> = {
-  'Floresta das Sombras': [
-    'vazia', 'vazia',
-    'armadilha', 'armadilha', 'armadilha',
-    'monstro', 'monstro',
-    'ouro', 'ouro',
-    'carta', 'carta',
-    'tesouro',
-    'cristal',
-    'especial',
-  ],
-  'Cidade Abandonada': [
-    'vazia',
-    'armadilha', 'armadilha', 'armadilha',
-    'monstro', 'monstro',
-    'ouro', 'ouro',
-    'carta', 'carta',
-    'tesouro',
-    'cristal',
-    'especial',
-  ],
-  'Castelo do Rei Sombrio': [
-    'armadilha', 'armadilha', 'armadilha', 'armadilha',
-    'monstro', 'monstro', 'monstro',
-    'ouro', 'ouro',
-    'carta', 'carta',
-    'tesouro',
-    'cristal',
-    'especial',
-    'vazia',
-  ],
+  'Floresta das Sombras':   ['vazia','vazia','armadilha','armadilha','armadilha','monstro','monstro','ouro','ouro','carta','carta','tesouro','cristal','especial'],
+  'Cidade Abandonada':      ['vazia','armadilha','armadilha','armadilha','monstro','monstro','ouro','ouro','carta','carta','tesouro','cristal','especial'],
+  'Castelo do Rei Sombrio': ['armadilha','armadilha','armadilha','armadilha','monstro','monstro','monstro','ouro','ouro','carta','carta','tesouro','cristal','especial','vazia'],
 };
 
 const CELL_TYPE_ICON: Record<BoardCellType, string> = {
-  vazia:     '⬜',
-  armadilha: '⚠️',
-  carta:     '🃏',
-  tesouro:   '💎',
-  ouro:      '💰',
-  cristal:   '🔮',
-  monstro:   '👹',
-  especial:  '🌟',
+  vazia:'⬜', armadilha:'⚠️', carta:'🃏', tesouro:'💎', ouro:'💰', cristal:'🔮', monstro:'👹', especial:'🌟',
 };
 
 const CELL_TYPE_COLOR: Record<BoardCellType, string> = {
-  vazia:     '#4b5563',
-  armadilha: '#f59e0b',
-  carta:     '#8b5cf6',
-  tesouro:   '#3b82f6',
-  ouro:      '#eab308',
-  cristal:   '#ec4899',
-  monstro:   '#ef4444',
-  especial:  '#f97316',
+  vazia:'#4b5563', armadilha:'#f59e0b', carta:'#8b5cf6', tesouro:'#3b82f6',
+  ouro:'#eab308', cristal:'#ec4899', monstro:'#ef4444', especial:'#f97316',
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Event generator ─────────────────────────────────────────────────────────
 
-function generateEvent(cellId: number, phase: PhaseName): CellEvent {
+function generateEvent(cellId: number, phase: PhaseName, playerClass?: PlayerClass): CellEvent {
   const pool = TYPE_POOL[phase];
   const type = pool[Math.floor(Math.random() * pool.length)];
-  const options = CELL_CONTENT[phase][type];
-  const pick = options[Math.floor(Math.random() * options.length)];
-  return {
-    id: uuidv4(),
-    cellId,
-    phase,
-    type,
-    content: pick.content,
-    description: pick.description,
-    reward: pick.reward,
-    penalty: pick.penalty,
-    timestamp: Date.now(),
-  };
+
+  let content: string;
+  let description: string;
+  let reward: string | undefined;
+  let penalty: string | undefined;
+
+  if (type === 'carta' && playerClass && CLASS_CARDS[playerClass]) {
+    // Draw a class-specific card for the active player
+    const cards = CLASS_CARDS[playerClass];
+    const card = cards[Math.floor(Math.random() * cards.length)];
+    content = card.name;
+    description = card.description;
+    reward = `🃏 Carta de ${playerClass}: "${card.name}"`;
+  } else {
+    const options = CELL_CONTENT[phase][type];
+    const pick = options[Math.floor(Math.random() * options.length)];
+    content = pick.content;
+    description = pick.description;
+    reward = pick.reward;
+    penalty = pick.penalty;
+  }
+
+  return { id: uuidv4(), cellId, phase, type, content, description, reward, penalty, timestamp: Date.now() };
 }
+
+// ─── Storage helpers ──────────────────────────────────────────────────────────
 
 function loadHistories(): PlayerHistories {
   try {
@@ -212,58 +181,53 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
 
-  const handleCellClick = useCallback((cellId: number, phase: PhaseName) => {
-    const event = generateEvent(cellId, phase);
+  const activePlayer = players.find(p => p.id === activePlayerId);
 
-    // Save to the current player's history
-    if (activePlayerId) {
-      const player = players.find(p => p.id === activePlayerId);
-      if (player) {
-        setPlayerHistories(prev => {
-          const existing = prev[activePlayerId] ?? {
-            playerId: activePlayerId,
-            playerName: player.name,
-            playerClass: player.playerClass,
-            events: [],
-          };
-          const updated: PlayerHistory = {
-            ...existing,
-            events: [event, ...existing.events].slice(0, 200),
-          };
-          const next = { ...prev, [activePlayerId]: updated };
-          saveHistories(next);
-          return next;
-        });
-      }
+  const handleCellClick = useCallback((cellId: number, phase: PhaseName) => {
+    // Generate a new random event, optionally using the player's class for carta events
+    const event = generateEvent(cellId, phase, activePlayer?.playerClass as PlayerClass | undefined);
+
+    // Save to the active player's history
+    if (activePlayerId && activePlayer) {
+      setPlayerHistories(prev => {
+        const existing = prev[activePlayerId] ?? {
+          playerId: activePlayerId,
+          playerName: activePlayer.name,
+          playerClass: activePlayer.playerClass,
+          events: [],
+        };
+        const updated: PlayerHistory = {
+          ...existing,
+          events: [event, ...existing.events].slice(0, 200),
+        };
+        const next = { ...prev, [activePlayerId]: updated };
+        saveHistories(next);
+        return next;
+      });
     }
 
     setOpenEvent(event);
-  }, [activePlayerId, players]);
+  }, [activePlayerId, activePlayer]);
 
   const handleCloseEvent = useCallback(() => {
-    // Discard the current event — cell goes back to hidden
+    // Discard the current event — cell returns to ❓
     setOpenEvent(null);
   }, []);
 
   const handleClearHistory = useCallback((playerId: string) => {
     setPlayerHistories(prev => {
       const next = { ...prev };
-      if (next[playerId]) {
-        next[playerId] = { ...next[playerId], events: [] };
-      }
+      if (next[playerId]) next[playerId] = { ...next[playerId], events: [] };
       saveHistories(next);
       return next;
     });
   }, []);
 
-  const activePlayer = players.find(p => p.id === activePlayerId);
-
-  // Build a flat list of display cells from PHASE_DEFS
+  // Build display cells from phase definitions
   const displayCells = PHASE_DEFS.flatMap(phase =>
     Array.from({ length: phase.cells }, (_, i) => ({
       id: phase.range[0] + i,
       phase: phase.name,
-      phaseColor: phase.color,
     }))
   );
 
@@ -315,11 +279,12 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
         )}
         {activePlayer && (
           <p className="text-[10px] text-gray-600 mt-2">
-            Cada casa será registrada no histórico de <span style={{ color: CLASS_INFO[activePlayer.playerClass]?.color ?? '#9ca3af' }}>{activePlayer.name}</span>. Toque em qualquer casa para sortear um evento.
+            Toque em qualquer casa para sortear um evento para{' '}
+            <span style={{ color: CLASS_INFO[activePlayer.playerClass]?.color ?? '#9ca3af' }}>
+              {activePlayer.name}
+            </span>{' '}
+            ({activePlayer.playerClass}). Cartas serão da classe do jogador.
           </p>
-        )}
-        {!activePlayerId && players.length > 0 && (
-          <p className="text-[10px] text-amber-500 mt-2">Selecione um jogador acima antes de abrir uma casa.</p>
         )}
       </div>
 
@@ -347,10 +312,7 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
                     key={cell.id}
                     onClick={() => handleCellClick(cell.id, cell.phase as PhaseName)}
                     className="relative aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 transition-opacity active:opacity-70"
-                    style={{
-                      background: 'rgba(0,0,0,0.4)',
-                      border: `1px solid rgba(255,255,255,0.06)`,
-                    }}
+                    style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.06)' }}
                   >
                     <span className="text-base leading-none">❓</span>
                     <span className="text-[9px] font-bold text-gray-600">{cell.id}</span>
@@ -369,24 +331,16 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
           {(Object.entries(CELL_TYPE_ICON) as [BoardCellType, string][]).map(([type, icon]) => (
             <div key={type} className="flex items-center gap-1.5 text-[10px]">
               <span>{icon}</span>
-              <span style={{ color: CELL_TYPE_COLOR[type] }}>
-                {type.charAt(0).toUpperCase() + type.slice(1)}
-              </span>
+              <span style={{ color: CELL_TYPE_COLOR[type] }}>{type.charAt(0).toUpperCase() + type.slice(1)}</span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ─── Event modal ─── */}
-      <Modal
-        isOpen={!!openEvent}
-        onClose={handleCloseEvent}
-        title={openEvent ? `Casa #${openEvent.cellId}` : ''}
-        size="sm"
-      >
+      {/* ─── Event Modal ─── */}
+      <Modal isOpen={!!openEvent} onClose={handleCloseEvent} title={openEvent ? `Casa #${openEvent.cellId}` : ''} size="sm">
         {openEvent && (
           <div className="space-y-4">
-            {/* Phase + type badge */}
             <div
               className="flex items-center gap-3 p-3 rounded-lg"
               style={{
@@ -402,12 +356,10 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
                 <div className="text-base font-bold text-gray-100">{openEvent.content}</div>
                 <div
                   className="text-[10px] px-1.5 py-0.5 rounded inline-block mt-1 font-medium"
-                  style={{
-                    color: CELL_TYPE_COLOR[openEvent.type],
-                    background: `${CELL_TYPE_COLOR[openEvent.type]}18`,
-                  }}
+                  style={{ color: CELL_TYPE_COLOR[openEvent.type], background: `${CELL_TYPE_COLOR[openEvent.type]}18` }}
                 >
                   {openEvent.type.charAt(0).toUpperCase() + openEvent.type.slice(1)}
+                  {openEvent.type === 'carta' && activePlayer ? ` — ${activePlayer.playerClass}` : ''}
                 </div>
               </div>
             </div>
@@ -434,23 +386,16 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
               </p>
             )}
 
-            <button
-              onClick={handleCloseEvent}
-              className="w-full btn-dark px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-300"
-            >
+            <button onClick={handleCloseEvent}
+              className="w-full btn-dark px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-300">
               Fechar — A casa volta a ficar oculta
             </button>
           </div>
         )}
       </Modal>
 
-      {/* ─── History modal ─── */}
-      <Modal
-        isOpen={showHistory}
-        onClose={() => setShowHistory(false)}
-        title="📜 Histórico de Exploração"
-        size="md"
-      >
+      {/* ─── History Modal ─── */}
+      <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="📜 Histórico de Exploração" size="md">
         <div className="space-y-4">
           {/* Player tabs */}
           {players.length > 0 && (
@@ -460,22 +405,16 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
                 const isSelected = historyFor === p.id;
                 const count = playerHistories[p.id]?.events.length ?? 0;
                 return (
-                  <button
-                    key={p.id}
-                    onClick={() => setHistoryFor(p.id)}
+                  <button key={p.id} onClick={() => setHistoryFor(p.id)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                     style={{
                       background: isSelected ? `${info.color}20` : 'rgba(0,0,0,0.3)',
                       border: `1px solid ${isSelected ? info.color + '60' : 'rgba(255,255,255,0.08)'}`,
                       color: isSelected ? info.color : '#9ca3af',
-                    }}
-                  >
+                    }}>
                     {info.emoji} {p.name}
                     {count > 0 && (
-                      <span className="ml-1 px-1 py-0.5 rounded text-[9px]"
-                        style={{ background: `${info.color}30` }}>
-                        {count}
-                      </span>
+                      <span className="ml-1 px-1 py-0.5 rounded text-[9px]" style={{ background: `${info.color}30` }}>{count}</span>
                     )}
                   </button>
                 );
@@ -483,7 +422,7 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
             </div>
           )}
 
-          {/* History list for selected player */}
+          {/* History list */}
           {(() => {
             if (!historyFor) {
               return (
@@ -514,10 +453,8 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
                   <span className="text-xs text-gray-500">
                     {info?.emoji} {history.playerName} — {history.events.length} evento{history.events.length !== 1 ? 's' : ''}
                   </span>
-                  <button
-                    onClick={() => handleClearHistory(historyFor)}
-                    className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-red-400 transition-colors px-2 py-1 rounded"
-                  >
+                  <button onClick={() => handleClearHistory(historyFor)}
+                    className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-red-400 transition-colors px-2 py-1 rounded">
                     <Trash2 size={10} /> Limpar
                   </button>
                 </div>
@@ -527,10 +464,8 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-semibold text-gray-200">Casa #{entry.cellId}</span>
-                        <span
-                          className="text-[10px] px-1 py-0.5 rounded"
-                          style={{ color: CELL_TYPE_COLOR[entry.type], background: `${CELL_TYPE_COLOR[entry.type]}15` }}
-                        >
+                        <span className="text-[10px] px-1 py-0.5 rounded"
+                          style={{ color: CELL_TYPE_COLOR[entry.type], background: `${CELL_TYPE_COLOR[entry.type]}15` }}>
                           {entry.type}
                         </span>
                       </div>

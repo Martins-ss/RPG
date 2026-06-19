@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Plus, Minus, Trash2, Package, ChevronUp, ChevronDown, UserPlus, Zap } from 'lucide-react';
-import { Player, PlayerClass } from '../types';
+import { Player, PlayerClass, ArmorPieceId, ARMOR_PIECES } from '../types';
 import { CLASS_INFO, getPhaseForLevel } from '../gameData';
 import { HeartDisplay } from './HealthBar';
 import Modal from './Modal';
@@ -10,13 +10,20 @@ interface PlayersPanelProps {
   addPlayer: (name: string, playerClass: PlayerClass) => void;
   removePlayer: (id: string) => void;
   adjustHealth: (id: string, amount: number) => void;
+  adjustGold: (id: string, amount: number) => void;
+  adjustCrystals: (id: string, amount: number) => void;
+  toggleArmorPiece: (id: string, piece: ArmorPieceId, found: boolean) => void;
   addXP: (id: string, amount: number) => void;
   setLevel: (id: string, level: number) => void;
 }
 
 const CLASSES: PlayerClass[] = ['Guerreiro', 'Arqueiro', 'Mago', 'Paladino', 'Assassino'];
 
-export default function PlayersPanel({ players, addPlayer, removePlayer, adjustHealth, addXP, setLevel }: PlayersPanelProps) {
+export default function PlayersPanel({
+  players, addPlayer, removePlayer,
+  adjustHealth, adjustGold, adjustCrystals, toggleArmorPiece,
+  addXP, setLevel,
+}: PlayersPanelProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showXPModal, setShowXPModal] = useState<string | null>(null);
   const [showLevelModal, setShowLevelModal] = useState<string | null>(null);
@@ -31,7 +38,6 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
 
   const handleAdd = () => {
     if (!newName.trim()) return;
-    console.log(`[PlayersPanel] Adicionando jogador: ${newName.trim()} (${newClass})`);
     addPlayer(newName.trim(), newClass);
     setNewName('');
     setNewClass('Guerreiro');
@@ -40,19 +46,12 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
 
   const handleAddXP = (id: string) => {
     const amount = parseInt(xpAmount) || 0;
-    if (amount > 0) {
-      console.log(`[PlayersPanel] Adicionando ${amount} XP ao jogador ${id}`);
-      addXP(id, amount);
-      setShowXPModal(null);
-      setXpAmount('50');
-    }
+    if (amount > 0) { addXP(id, amount); setShowXPModal(null); setXpAmount('50'); }
   };
 
   const handleSetLevel = (id: string) => {
-    const level = parseInt(levelValue) || 1;
-    const clampedLevel = Math.max(1, Math.min(68, level));
-    console.log(`[PlayersPanel] Definindo nível ${clampedLevel} para jogador ${id}`);
-    setLevel(id, clampedLevel);
+    const level = Math.max(1, Math.min(68, parseInt(levelValue) || 1));
+    setLevel(id, level);
     setShowLevelModal(null);
   };
 
@@ -75,10 +74,13 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
       ) : (
         <div className="space-y-3">
           {players.map(player => {
-            const classInfo = CLASS_INFO[player.playerClass] || { emoji: '❓', color: '#9ca3af', description: 'Classe desconhecida' };
+            const classInfo = CLASS_INFO[player.playerClass] || { emoji: '❓', color: '#9ca3af', description: '' };
             const phase = getPhaseForLevel(player.level);
             const isExpanded = expandedPlayer === player.id;
             const xpPct = player.xpToNext > 0 ? (player.xp / player.xpToNext) * 100 : 100;
+            const armorCount = Object.values(player.armor ?? {}).filter(Boolean).length;
+            const gold = player.gold ?? 0;
+            const crystals = player.crystals ?? 0;
 
             return (
               <div key={player.id} className="card-dark rounded-xl overflow-hidden">
@@ -102,6 +104,16 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
                         <span className="text-xs text-gray-500">Nv. {player.level}</span>
                         {phase && <span className="text-[10px] text-gray-600">{phase.emoji} {phase.name}</span>}
                       </div>
+
+                      {/* Gold + Crystals inline */}
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-[11px] text-yellow-500">💰 {gold}</span>
+                        <span className="text-[11px] text-pink-400">💎 {crystals}</span>
+                        {armorCount > 0 && (
+                          <span className="text-[11px] text-amber-500">🛡️ {armorCount}/6</span>
+                        )}
+                      </div>
+
                       <div className="mt-2">
                         <HeartDisplay
                           current={player.health}
@@ -129,23 +141,57 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
 
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-3 space-y-3 animate-slideIn border-t border-red-900/10">
+
+                    {/* Vida */}
                     <div>
                       <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">Vida</label>
                       <div className="flex items-center gap-2">
                         <button onClick={() => adjustHealth(player.id, -1)}
-                          className="btn-dark px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 text-red-400 hover:text-red-300">
+                          className="btn-dark px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 text-red-400">
                           <Minus size={14} /> Dano
                         </button>
                         <button onClick={() => adjustHealth(player.id, 1)}
-                          className="btn-dark px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 text-green-400 hover:text-green-300">
+                          className="btn-dark px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 text-green-400">
                           <Plus size={14} /> Curar
                         </button>
                         <button onClick={() => adjustHealth(player.id, 5 - player.health)}
-                          className="btn-dark px-3 py-1.5 rounded-lg text-sm text-blue-400 hover:text-blue-300">
+                          className="btn-dark px-3 py-1.5 rounded-lg text-sm text-blue-400">
                           Full
                         </button>
                       </div>
                     </div>
+
+                    {/* Ouro */}
+                    <div>
+                      <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">
+                        💰 Ouro — {gold}
+                      </label>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {[5, 10, 25, 50].map(v => (
+                          <button key={v} onClick={() => adjustGold(player.id, v)}
+                            className="btn-dark px-2.5 py-1 rounded-lg text-xs text-yellow-400">+{v}</button>
+                        ))}
+                        <button onClick={() => adjustGold(player.id, -10)}
+                          className="btn-dark px-2.5 py-1 rounded-lg text-xs text-gray-500">-10</button>
+                      </div>
+                    </div>
+
+                    {/* Cristais */}
+                    <div>
+                      <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">
+                        💎 Cristais — {crystals}
+                      </label>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {[1, 2, 5].map(v => (
+                          <button key={v} onClick={() => adjustCrystals(player.id, v)}
+                            className="btn-dark px-2.5 py-1 rounded-lg text-xs text-pink-400">+{v}</button>
+                        ))}
+                        <button onClick={() => adjustCrystals(player.id, -1)}
+                          className="btn-dark px-2.5 py-1 rounded-lg text-xs text-gray-500">-1</button>
+                      </div>
+                    </div>
+
+                    {/* Progressão */}
                     <div>
                       <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">Progressão</label>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -159,6 +205,40 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
                         </button>
                       </div>
                     </div>
+
+                    {/* Armadura Lendária */}
+                    <div>
+                      <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 block">
+                        ⚔️ Armadura Lendária ({armorCount}/6 — {Math.round((armorCount / 6) * 100)}%)
+                      </label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {ARMOR_PIECES.map(piece => {
+                          const found = (player.armor ?? {})[piece.id] ?? false;
+                          return (
+                            <button
+                              key={piece.id}
+                              onClick={() => toggleArmorPiece(player.id, piece.id, !found)}
+                              className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] transition-colors"
+                              style={{
+                                background: found ? 'rgba(245,158,11,0.15)' : 'rgba(0,0,0,0.3)',
+                                border: `1px solid ${found ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.06)'}`,
+                                color: found ? '#f59e0b' : '#4b5563',
+                              }}
+                            >
+                              <span>{piece.emoji}</span>
+                              <span className="flex-1 text-left truncate">{piece.label}</span>
+                              {found && <span className="text-[10px]">✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {armorCount === 6 && (
+                        <div className="mt-2 text-[11px] text-amber-400 text-center font-bold">
+                          ⚔️ Armadura Lendária Completa! ✨
+                        </div>
+                      )}
+                    </div>
+
                     <div className="flex items-center justify-between">
                       <button onClick={() => setShowInventoryId(player.id)}
                         className="btn-dark px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 text-amber-400">
@@ -177,6 +257,7 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
         </div>
       )}
 
+      {/* Add Player Modal */}
       <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); setNewName(''); setNewClass('Guerreiro'); }} title="Novo Aventureiro">
         <div className="space-y-4">
           <div>
@@ -186,18 +267,12 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
                 const info = CLASS_INFO[cls];
                 const isSelected = newClass === cls;
                 return (
-                  <button
-                    key={cls}
-                    onClick={() => {
-                      setNewClass(cls);
-                      setTimeout(() => nameInputRef.current?.focus(), 50);
-                    }}
+                  <button key={cls} onClick={() => { setNewClass(cls); setTimeout(() => nameInputRef.current?.focus(), 50); }}
                     className={`flex items-center gap-3 p-3 rounded-lg transition-all text-left ${isSelected ? 'ring-1' : 'hover:bg-white/5'}`}
                     style={{
                       background: isSelected ? `${info.color}15` : 'rgba(0,0,0,0.2)',
                       border: `1px solid ${isSelected ? info.color + '50' : 'rgba(255,255,255,0.05)'}`,
-                    }}
-                  >
+                    }}>
                     <span className="text-2xl">{info.emoji}</span>
                     <div>
                       <div className="text-sm font-semibold" style={{ color: isSelected ? info.color : '#d1d5db' }}>{cls}</div>
@@ -210,16 +285,9 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
           </div>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">2. Nome do Aventureiro</label>
-            <input
-              ref={nameInputRef}
-              type="text"
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              placeholder="Digite o nome..."
-              className="w-full px-3 py-2.5 rounded-lg text-sm"
-              onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              autoComplete="off"
-            />
+            <input ref={nameInputRef} type="text" value={newName} onChange={e => setNewName(e.target.value)}
+              placeholder="Digite o nome..." className="w-full px-3 py-2.5 rounded-lg text-sm"
+              onKeyDown={e => e.key === 'Enter' && handleAdd()} autoComplete="off" />
           </div>
           <button onClick={handleAdd} disabled={!newName.trim()}
             className="w-full btn-red px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
@@ -228,62 +296,45 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
         </div>
       </Modal>
 
+      {/* XP Modal */}
       <Modal isOpen={!!showXPModal} onClose={() => setShowXPModal(null)} title="Conceder XP" size="sm">
         <div className="space-y-4">
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Quantidade de XP</label>
-            <input
-              type="number"
-              value={xpAmount}
-              onChange={e => setXpAmount(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg text-sm"
-              min="1"
-              autoFocus
-            />
+            <input type="number" value={xpAmount} onChange={e => setXpAmount(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg text-sm" min="1" autoFocus />
           </div>
           <div className="flex gap-2 flex-wrap">
             {[25, 50, 100, 200, 500].map(v => (
               <button key={v} onClick={() => setXpAmount(String(v))}
-                className="btn-dark px-3 py-1.5 rounded-lg text-xs text-purple-400">
-                +{v} XP
-              </button>
+                className="btn-dark px-3 py-1.5 rounded-lg text-xs text-purple-400">+{v} XP</button>
             ))}
           </div>
           <button onClick={() => showXPModal && handleAddXP(showXPModal)}
-            className="w-full btn-red px-4 py-2.5 rounded-lg text-sm font-semibold">
-            Conceder XP
-          </button>
+            className="w-full btn-red px-4 py-2.5 rounded-lg text-sm font-semibold">Conceder XP</button>
         </div>
       </Modal>
 
+      {/* Level Modal */}
       <Modal isOpen={!!showLevelModal} onClose={() => setShowLevelModal(null)} title="Definir Nível" size="sm">
         <div className="space-y-4">
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Nível (1–68)</label>
-            <input
-              type="number"
-              value={levelValue}
-              onChange={e => setLevelValue(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg text-sm"
-              min="1" max="68"
-              autoFocus
-            />
+            <input type="number" value={levelValue} onChange={e => setLevelValue(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg text-sm" min="1" max="68" autoFocus />
           </div>
           <div className="flex gap-2 flex-wrap">
             {[1, 10, 25, 42, 55, 68].map(v => (
               <button key={v} onClick={() => setLevelValue(String(v))}
-                className="btn-dark px-3 py-1.5 rounded-lg text-xs text-yellow-400">
-                Nv. {v}
-              </button>
+                className="btn-dark px-3 py-1.5 rounded-lg text-xs text-yellow-400">Nv. {v}</button>
             ))}
           </div>
           <button onClick={() => showLevelModal && handleSetLevel(showLevelModal)}
-            className="w-full btn-red px-4 py-2.5 rounded-lg text-sm font-semibold">
-            Definir Nível
-          </button>
+            className="w-full btn-red px-4 py-2.5 rounded-lg text-sm font-semibold">Definir Nível</button>
         </div>
       </Modal>
 
+      {/* Inventory Modal */}
       <Modal isOpen={!!showInventoryId} onClose={() => setShowInventoryId(null)} title="🎒 Inventário" size="md">
         {(() => {
           const player = players.find(p => p.id === showInventoryId);
@@ -308,14 +359,10 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
                     <div className="text-[10px] text-gray-500">{item.description}</div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[10px] px-1.5 py-0.5 rounded" style={{
-                        color: item.rarity === 'Comum' ? '#9ca3af' :
-                          item.rarity === 'Raro' ? '#3b82f6' :
-                          item.rarity === 'Épico' ? '#8b5cf6' :
-                          item.rarity === 'Lendário' ? '#f59e0b' : '#ef4444',
-                        background: item.rarity === 'Comum' ? 'rgba(156,163,175,0.1)' :
-                          item.rarity === 'Raro' ? 'rgba(59,130,246,0.1)' :
-                          item.rarity === 'Épico' ? 'rgba(139,92,246,0.1)' :
-                          item.rarity === 'Lendário' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
+                        color: item.rarity === 'Comum' ? '#9ca3af' : item.rarity === 'Raro' ? '#3b82f6' :
+                          item.rarity === 'Épico' ? '#8b5cf6' : item.rarity === 'Lendário' ? '#f59e0b' : '#ef4444',
+                        background: item.rarity === 'Comum' ? 'rgba(156,163,175,0.1)' : item.rarity === 'Raro' ? 'rgba(59,130,246,0.1)' :
+                          item.rarity === 'Épico' ? 'rgba(139,92,246,0.1)' : item.rarity === 'Lendário' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
                       }}>{item.rarity}</span>
                       <span className="text-[10px] text-gray-600">x{item.quantity}</span>
                     </div>
@@ -327,6 +374,7 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
         })()}
       </Modal>
 
+      {/* Delete Confirm Modal */}
       <Modal isOpen={!!showDeleteConfirm} onClose={() => setShowDeleteConfirm(null)} title="⚠️ Remover Jogador" size="sm">
         <div className="text-center space-y-4">
           <p className="text-sm text-gray-400">
@@ -334,9 +382,7 @@ export default function PlayersPanel({ players, addPlayer, removePlayer, adjustH
           </p>
           <p className="text-xs text-gray-600">Esta ação não pode ser desfeita.</p>
           <div className="flex gap-3">
-            <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 btn-dark px-4 py-2 rounded-lg text-sm">
-              Cancelar
-            </button>
+            <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 btn-dark px-4 py-2 rounded-lg text-sm">Cancelar</button>
             <button onClick={() => { showDeleteConfirm && removePlayer(showDeleteConfirm); setShowDeleteConfirm(null); }}
               className="flex-1 bg-red-900/50 hover:bg-red-900 text-red-300 px-4 py-2 rounded-lg text-sm font-semibold transition-colors border border-red-800/50">
               Remover
