@@ -1,0 +1,188 @@
+CORREÇÃO DA LÓGICA DO TABULEIRO DE EXPLORAÇÃO
+
+A lógica atual do tabuleiro não está funcionando da forma desejada.
+
+Quero transformar o tabuleiro em um sistema de descoberta temporária e individual para cada jogador.
+
+EXEMPLO REAL:
+
+Jogador: Eric
+Classe: Guerreiro
+
+Eric entra na Floresta das Sombras.
+
+Eric abre a Casa/Nível 1.
+
+O sistema sorteia:
+
+🕷️ Armadilha — Teia Grudenta
+
+Abre um modal mostrando:
+
+Casa 1
+Floresta das Sombras
+Teia Grudenta
+Descrição da armadilha
+
+Quando Eric clicar em FECHAR:
+
+* O modal fecha.
+* O conteúdo daquela casa não fica salvo.
+* A casa volta a ficar oculta.
+* O evento é descartado.
+
+Agora a jogadora:
+
+Maria Clara
+Classe: Arqueira
+
+Abre a mesma Casa/Nível 1.
+
+O sistema faz um NOVO sorteio.
+
+Pode aparecer:
+
+💰 Tesouro
+
+ou
+
+📜 Carta
+
+ou
+
+💎 Cristal
+
+ou
+
+⚔️ Monstro
+
+ou qualquer outro evento.
+
+IMPORTANTE:
+
+Maria Clara NÃO pode ver o que apareceu para Eric.
+
+Cada abertura da casa deve gerar um novo resultado.
+
+==================================================
+
+NOVA REGRA
+
+==================================================
+
+Toda vez que uma casa for aberta:
+
+1. Sortear um evento aleatório.
+2. Mostrar o resultado.
+3. Mostrar a descrição.
+4. Permitir fechar.
+
+Ao fechar:
+
+* Apagar o resultado sorteado.
+* Não salvar permanentemente.
+* Não deixar a casa revelada.
+* Voltar ao estado oculto.
+
+Quando a mesma casa for aberta novamente:
+
+* Gerar um novo sorteio.
+* Não reutilizar o resultado anterior.
+
+==================================================
+
+EXEMPLO
+
+==================================================
+
+Casa 1
+
+Eric abre:
+
+🕷️ Armadilha
+
+Fecha.
+
+Casa volta ao estado oculto.
+
+Maria Clara abre:
+
+💰 Tesouro
+
+Fecha.
+
+Casa volta ao estado oculto.
+
+João abre:
+
+📜 Carta
+
+Fecha.
+
+Casa volta ao estado oculto.
+
+Pedro abre:
+
+⚔️ Monstro
+
+Fecha.
+
+Casa volta ao estado oculto.
+
+Todos recebem resultados diferentes.
+
+==================================================
+
+EVENTOS POSSÍVEIS
+
+==================================================
+
+* Armadilhas da fase
+* Tesouros
+* Baús
+* Ouro
+* Cristais
+* Cartas
+* Eventos especiais
+* Monstros
+* Recompensas
+
+==================================================
+
+HISTÓRICO
+
+==================================================
+
+Cada jogador deve possuir seu próprio histórico.
+
+Exemplo:
+
+Eric:
+Casa 1 → Teia Grudenta
+
+Maria Clara:
+Casa 1 → Tesouro
+
+João:
+Casa 1 → Carta
+
+Pedro:
+Casa 1 → Monstro
+
+Os históricos não devem se misturar.
+
+==================================================
+
+IMPORTANTE
+
+==================================================
+
+Não alterar a estética.
+
+Não alterar cores.
+
+Não alterar layout.
+
+Modificar apenas a lógica do tabuleiro.
+
+O objetivo é transformar cada casa em uma descoberta temporária e aleatória, gerando um novo evento toda vez que qualquer jogador abrir a casa.

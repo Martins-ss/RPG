@@ -75,7 +75,7 @@ export default function App() {
           />
         );
       case 'tabuleiro':
-        return <TabuleiroPanel />;
+        return <TabuleiroPanel players={store.players} />;
       default:
         return null;
     }
