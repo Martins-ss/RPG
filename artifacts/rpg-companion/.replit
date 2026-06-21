@@ -1,0 +1,1 @@
+run = "cd artifacts/rpg-companion && pnpm dev --host 0.0.0.0"
