@@ -1,14 +1,16 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { BookOpen, User, Trash2, Swords } from 'lucide-react';
 import { PhaseName, BoardCellType, Player, PlayerClass, BossDefeat } from '../types';
 import Modal from './Modal';
 import { CLASS_INFO, CLASS_CARDS, BOSSES } from '../gameData';
 import { v4 as uuidv4 } from 'uuid';
 
-// ─── Storage ────────────────────────────────────────────────────────────────
+// ─── Storage keys ────────────────────────────────────────────────────────────
 
-const BOARD_V2_KEY = 'reino-rei-sombrio-tabuleiro-v2';
+const BOARD_KEY          = 'reino-rei-sombrio-tabuleiro-v3';
+const BOSS_POS_KEY       = 'reino-rei-sombrio-boss-positions-v2';
 const HISTORY_KEY_LEGACY = 'reino-rei-sombrio-tabuleiro-historico';
+const BOARD_KEY_LEGACY   = 'reino-rei-sombrio-tabuleiro-v2';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -25,12 +27,16 @@ interface CellEvent {
   timestamp: number;
 }
 
+// Per-player: visited cells + sequential progress
 interface PlayerBoardData {
   visitedCells: Record<number, CellEvent>;
-  bossCells: Record<string, number>;
+  nextAvailableCell: number;
 }
 
 type BoardStorage = Record<string, PlayerBoardData>;
+
+// Global: one position per boss, shared across ALL players
+type BossPositions = Record<string, number>; // bossName → cellId
 
 // ─── Phase definitions ───────────────────────────────────────────────────────
 
@@ -119,11 +125,7 @@ const CELL_TYPE_COLOR: Record<BoardCellType, string> = {
 function generateEvent(cellId: number, phase: PhaseName, playerClass?: PlayerClass): CellEvent {
   const pool = TYPE_POOL[phase];
   const type = pool[Math.floor(Math.random() * pool.length)];
-
-  let content: string;
-  let description: string;
-  let reward: string | undefined;
-  let penalty: string | undefined;
+  let content: string, description: string, reward: string | undefined, penalty: string | undefined;
 
   if (type === 'carta' && playerClass && CLASS_CARDS[playerClass]) {
     const cards = CLASS_CARDS[playerClass];
@@ -134,39 +136,55 @@ function generateEvent(cellId: number, phase: PhaseName, playerClass?: PlayerCla
   } else {
     const options = CELL_CONTENT[phase][type as Exclude<BoardCellType,'boss'>];
     const pick = options[Math.floor(Math.random() * options.length)];
-    content = pick.content;
-    description = pick.description;
-    reward = pick.reward;
-    penalty = pick.penalty;
+    content = pick.content; description = pick.description; reward = pick.reward; penalty = pick.penalty;
   }
-
   return { id: uuidv4(), cellId, phase, type, content, description, reward, penalty, timestamp: Date.now() };
 }
 
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 
 function loadBoardStorage(): BoardStorage {
+  // Try v3 key first
   try {
-    const saved = localStorage.getItem(BOARD_V2_KEY);
+    const saved = localStorage.getItem(BOARD_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed === 'object') return parsed as BoardStorage;
+      const parsed = JSON.parse(saved) as BoardStorage;
+      if (parsed && typeof parsed === 'object') return parsed;
     }
   } catch {}
 
-  // Migrate from legacy format
+  // Migrate from v2
+  try {
+    const v2 = localStorage.getItem(BOARD_KEY_LEGACY);
+    if (v2) {
+      const parsed = JSON.parse(v2) as Record<string, { visitedCells?: Record<number, CellEvent>; bossCells?: Record<string, number> }>;
+      const migrated: BoardStorage = {};
+      for (const [pid, data] of Object.entries(parsed)) {
+        const visited = data.visitedCells ?? {};
+        const keys = Object.keys(visited).map(Number).filter(n => !isNaN(n));
+        const maxVisited = keys.length > 0 ? Math.max(...keys) : 0;
+        migrated[pid] = {
+          visitedCells: visited,
+          nextAvailableCell: maxVisited + 1,
+        };
+      }
+      return migrated;
+    }
+  } catch {}
+
+  // Migrate from legacy history key
   try {
     const legacy = localStorage.getItem(HISTORY_KEY_LEGACY);
     if (legacy) {
-      const parsed = JSON.parse(legacy) as Record<string, { playerId: string; playerName: string; events: CellEvent[] }>;
+      const parsed = JSON.parse(legacy) as Record<string, { events?: CellEvent[] }>;
       const migrated: BoardStorage = {};
       for (const [pid, ph] of Object.entries(parsed)) {
         const visitedCells: Record<number, CellEvent> = {};
-        const sorted = [...ph.events].sort((a, b) => a.timestamp - b.timestamp);
-        for (const ev of sorted) {
-          visitedCells[ev.cellId] = ev;
-        }
-        migrated[pid] = { visitedCells, bossCells: {} };
+        const sorted = [...(ph.events ?? [])].sort((a, b) => a.timestamp - b.timestamp);
+        for (const ev of sorted) visitedCells[ev.cellId] = ev;
+        const keys = Object.keys(visitedCells).map(Number);
+        const maxVisited = keys.length > 0 ? Math.max(...keys) : 0;
+        migrated[pid] = { visitedCells, nextAvailableCell: maxVisited + 1 };
       }
       return migrated;
     }
@@ -175,56 +193,80 @@ function loadBoardStorage(): BoardStorage {
   return {};
 }
 
-function saveBoardStorage(storage: BoardStorage) {
-  try { localStorage.setItem(BOARD_V2_KEY, JSON.stringify(storage)); } catch {}
+function saveBoardStorage(s: BoardStorage) {
+  try { localStorage.setItem(BOARD_KEY, JSON.stringify(s)); } catch {}
+}
+
+// ─── Global boss position helpers ────────────────────────────────────────────
+
+function loadBossPositions(): BossPositions {
+  try {
+    const saved = localStorage.getItem(BOSS_POS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved) as BossPositions;
+      if (parsed && typeof parsed === 'object') {
+        // Validate: ensure all bosses have a position
+        let complete = true;
+        for (const b of BOSSES) {
+          if (typeof parsed[b.name] !== 'number') { complete = false; break; }
+        }
+        if (complete) return parsed;
+      }
+    }
+  } catch {}
+  return initBossPositions({});
+}
+
+function initBossPositions(existing: BossPositions): BossPositions {
+  const result: BossPositions = { ...existing };
+  for (const boss of BOSSES) {
+    if (typeof result[boss.name] !== 'number') {
+      const phaseDef = PHASE_DEFS.find(p => p.name === boss.phase);
+      if (phaseDef) {
+        const span = phaseDef.range[1] - phaseDef.range[0] + 1;
+        result[boss.name] = phaseDef.range[0] + Math.floor(Math.random() * span);
+      }
+    }
+  }
+  return result;
+}
+
+function saveBossPositions(p: BossPositions) {
+  try { localStorage.setItem(BOSS_POS_KEY, JSON.stringify(p)); } catch {}
+}
+
+// Reassign a single boss to a new global position after an encounter.
+// Avoids: old cell, cells visited by the encountering player.
+function repositionBoss(
+  bossName: string,
+  oldCell: number,
+  visitedByPlayer: Record<number, CellEvent>
+): number | null {
+  const boss = BOSSES.find(b => b.name === bossName);
+  if (!boss) return null;
+  const phaseDef = PHASE_DEFS.find(p => p.name === boss.phase);
+  if (!phaseDef) return null;
+
+  const visited = new Set(Object.keys(visitedByPlayer).map(Number));
+
+  const candidates: number[] = [];
+  for (let i = phaseDef.range[0]; i <= phaseDef.range[1]; i++) {
+    if (i !== oldCell && !visited.has(i)) candidates.push(i);
+  }
+
+  if (candidates.length > 0) {
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  // Fallback: any cell except old cell
+  const fallback: number[] = [];
+  for (let i = phaseDef.range[0]; i <= phaseDef.range[1]; i++) {
+    if (i !== oldCell) fallback.push(i);
+  }
+  return fallback.length > 0 ? fallback[Math.floor(Math.random() * fallback.length)] : null;
 }
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
-
-// ─── Boss cell assignment ─────────────────────────────────────────────────────
-
-function assignBossCells(
-  playerData: PlayerBoardData,
-  bossDefeats: Record<string, BossDefeat>
-): Record<string, number> {
-  const newBossCells: Record<string, number> = {};
-
-  for (const boss of BOSSES) {
-    if (bossDefeats[boss.name]) continue;
-
-    const phaseDef = PHASE_DEFS.find(p => p.name === boss.phase);
-    if (!phaseDef) continue;
-
-    const visitedIds = new Set(
-      Object.keys(playerData.visitedCells).map(k => Number(k))
-    );
-    const prevCell = playerData.bossCells[boss.name];
-
-    const available: number[] = [];
-    for (let i = phaseDef.range[0]; i <= phaseDef.range[1]; i++) {
-      if (!visitedIds.has(i) && i !== prevCell) {
-        available.push(i);
-      }
-    }
-
-    if (available.length > 0) {
-      newBossCells[boss.name] = available[Math.floor(Math.random() * available.length)];
-    } else {
-      // Fallback: try without excluding prev cell
-      const fallback: number[] = [];
-      for (let i = phaseDef.range[0]; i <= phaseDef.range[1]; i++) {
-        if (!visitedIds.has(i)) fallback.push(i);
-      }
-      if (fallback.length > 0) {
-        newBossCells[boss.name] = fallback[Math.floor(Math.random() * fallback.length)];
-      }
-      // else all cells visited — boss has nowhere to go, not assigned
-    }
-  }
-
-  return newBossCells;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -239,67 +281,51 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
   const [activePlayerId, setActivePlayerId] = useState<string | null>(
     players.length > 0 ? players[0].id : null
   );
+
+  // Per-player board state (visited cells + sequential progress)
   const [boardStorage, setBoardStorage] = useState<BoardStorage>(loadBoardStorage);
-  const [openEvent, setOpenEvent] = useState<CellEvent | null>(null);
+
+  // Global boss positions — loaded ONCE, only mutated on encounter
+  const [bossPositions, setBossPositions] = useState<BossPositions>(() => {
+    const loaded = loadBossPositions();
+    saveBossPositions(loaded); // persist init if missing
+    return loaded;
+  });
+
+  const [openEvent, setOpenEvent]       = useState<CellEvent | null>(null);
   const [openBossName, setOpenBossName] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [showBlocked, setShowBlocked]   = useState(false);
+  const [showHistory, setShowHistory]   = useState(false);
+  const [historyFor, setHistoryFor]     = useState<string | null>(null);
 
   const activePlayer = players.find(p => p.id === activePlayerId) ?? null;
+  const activeData: PlayerBoardData = boardStorage[activePlayerId ?? ''] ?? { visitedCells: {}, nextAvailableCell: 1 };
 
-  // Track previous player to detect switches vs. first mount
-  const prevPlayerRef = useRef<string | null>(null);
-
-  // Reassign boss cells whenever active player changes (or on first mount)
-  useEffect(() => {
-    if (!activePlayerId) return;
-
-    setBoardStorage(prev => {
-      const playerData: PlayerBoardData = prev[activePlayerId] ?? { visitedCells: {}, bossCells: {} };
-      const newBossCells = assignBossCells(playerData, bossDefeats);
-
-      const updated: BoardStorage = {
-        ...prev,
-        [activePlayerId]: {
-          ...playerData,
-          bossCells: newBossCells,
-        },
-      };
-      saveBoardStorage(updated);
-      return updated;
-    });
-
-    prevPlayerRef.current = activePlayerId;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePlayerId]);
-
-  const activePlayerData = activePlayerId ? (boardStorage[activePlayerId] ?? { visitedCells: {}, bossCells: {} }) : null;
-
-  // Which boss (if any) is hiding in this cell for the active player?
-  function getBossAtCell(cellId: number): typeof BOSSES[number] | null {
-    if (!activePlayerData) return null;
-    for (const boss of BOSSES) {
-      if (bossDefeats[boss.name]) continue;
-      if (activePlayerData.bossCells[boss.name] === cellId) return boss;
-    }
-    return null;
-  }
+  // ─── Cell click handler ───────────────────────────────────────────────────
 
   const handleCellClick = useCallback((cellId: number, phase: PhaseName) => {
     if (!activePlayerId || !activePlayer) return;
 
-    const playerData: PlayerBoardData = boardStorage[activePlayerId] ?? { visitedCells: {}, bossCells: {} };
+    const pData: PlayerBoardData = boardStorage[activePlayerId] ?? { visitedCells: {}, nextAvailableCell: 1 };
+    const next = pData.nextAvailableCell;
 
-    // Already visited — show the stored event
-    if (playerData.visitedCells[cellId]) {
-      setOpenEvent(playerData.visitedCells[cellId]);
+    // LOCKED — cell is beyond what player can access
+    if (cellId > next) {
+      setShowBlocked(true);
       return;
     }
 
-    // Check if this is a boss cell
-    const bossHere = getBossAtCell(cellId);
+    // ALREADY VISITED — show stored event
+    if (pData.visitedCells[cellId]) {
+      setOpenEvent(pData.visitedCells[cellId]);
+      return;
+    }
+
+    // NEXT AVAILABLE CELL — check if boss is here
+    const bossHere = BOSSES.find(b => !bossDefeats[b.name] && bossPositions[b.name] === cellId);
+
     if (bossHere) {
-      // Create a boss event and mark cell as visited
+      // Mark cell as visited with boss event
       const bossEvent: CellEvent = {
         id: uuidv4(),
         cellId,
@@ -311,48 +337,52 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
         timestamp: Date.now(),
       };
 
+      const updatedVisited = { ...pData.visitedCells, [cellId]: bossEvent };
+
+      // Advance player's progression
+      const newNext = cellId + 1;
+
+      // Reposition boss globally (only once, right now)
+      const newCell = repositionBoss(bossHere.name, cellId, updatedVisited);
+      const newPositions = { ...bossPositions, [bossHere.name]: newCell ?? bossPositions[bossHere.name] };
+
       setBoardStorage(prev => {
-        const pData = prev[activePlayerId] ?? { visitedCells: {}, bossCells: {} };
         const updated: BoardStorage = {
           ...prev,
-          [activePlayerId]: {
-            ...pData,
-            visitedCells: { ...pData.visitedCells, [cellId]: bossEvent },
-          },
+          [activePlayerId]: { visitedCells: updatedVisited, nextAvailableCell: newNext },
         };
         saveBoardStorage(updated);
         return updated;
       });
 
+      setBossPositions(newPositions);
+      saveBossPositions(newPositions);
       setOpenBossName(bossHere.name);
       return;
     }
 
-    // Normal unvisited cell — generate event and mark visited
+    // NEXT AVAILABLE CELL — normal event
     const event = generateEvent(cellId, phase, activePlayer.playerClass as PlayerClass);
+    const updatedVisited = { ...pData.visitedCells, [cellId]: event };
+    const newNext = cellId + 1;
 
     setBoardStorage(prev => {
-      const pData = prev[activePlayerId] ?? { visitedCells: {}, bossCells: {} };
       const updated: BoardStorage = {
         ...prev,
-        [activePlayerId]: {
-          ...pData,
-          visitedCells: { ...pData.visitedCells, [cellId]: event },
-        },
+        [activePlayerId]: { visitedCells: updatedVisited, nextAvailableCell: newNext },
       };
       saveBoardStorage(updated);
       return updated;
     });
 
     setOpenEvent(event);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePlayerId, activePlayer, boardStorage]);
+  }, [activePlayerId, activePlayer, boardStorage, bossDefeats, bossPositions]);
 
   const handleClearHistory = useCallback((playerId: string) => {
     setBoardStorage(prev => {
       const updated: BoardStorage = {
         ...prev,
-        [playerId]: { visitedCells: {}, bossCells: {} },
+        [playerId]: { visitedCells: {}, nextAvailableCell: 1 },
       };
       saveBoardStorage(updated);
       return updated;
@@ -366,16 +396,16 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
     }))
   );
 
-  // Visited events sorted newest first for history
-  function getVisitedEventsForPlayer(playerId: string): CellEvent[] {
+  function getVisitedEvents(playerId: string): CellEvent[] {
     const data = boardStorage[playerId];
     if (!data) return [];
     return Object.values(data.visitedCells).sort((a, b) => b.timestamp - a.timestamp);
   }
 
-  const visitedCount = activePlayerId
-    ? Object.keys(boardStorage[activePlayerId]?.visitedCells ?? {}).length
-    : 0;
+  const visitedCount = Object.keys(activeData.visitedCells).length;
+  const nextCell     = activeData.nextAvailableCell;
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -388,7 +418,8 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
           </h2>
           {activePlayer && (
             <p className="text-[10px] text-gray-600 mt-0.5">
-              {activePlayer.name}: {visitedCount} casa{visitedCount !== 1 ? 's' : ''} explorada{visitedCount !== 1 ? 's' : ''}
+              {activePlayer.name}: {visitedCount} explorada{visitedCount !== 1 ? 's' : ''} — próxima:{' '}
+              <span className="text-amber-500">Casa {nextCell}</span>
             </p>
           )}
         </div>
@@ -410,9 +441,10 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
         ) : (
           <div className="flex flex-wrap gap-2">
             {players.map(p => {
-              const info = CLASS_INFO[p.playerClass] || { emoji: '❓', color: '#9ca3af' };
+              const info    = CLASS_INFO[p.playerClass] || { emoji: '❓', color: '#9ca3af' };
               const isActive = activePlayerId === p.id;
-              const pVisited = Object.keys(boardStorage[p.id]?.visitedCells ?? {}).length;
+              const pData   = boardStorage[p.id] ?? { visitedCells: {}, nextAvailableCell: 1 };
+              const pVisited = Object.keys(pData.visitedCells).length;
               return (
                 <button
                   key={p.id}
@@ -438,11 +470,12 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
         )}
         {activePlayer && (
           <p className="text-[10px] text-gray-600 mt-2">
-            Toque em uma casa para explorá-la.{' '}
+            Cada jogador avança uma casa por vez.{' '}
             <span style={{ color: CLASS_INFO[activePlayer.playerClass]?.color ?? '#9ca3af' }}>
               {activePlayer.name}
             </span>{' '}
-            tem progresso salvo neste tabuleiro.
+            pode abrir a{' '}
+            <span className="text-amber-500 font-semibold">Casa {nextCell}</span>.
           </p>
         )}
       </div>
@@ -467,33 +500,45 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
 
               <div className="p-3 grid grid-cols-6 gap-2">
                 {phaseCells.map(cell => {
-                  const visitedEvent = activePlayerData?.visitedCells[cell.id];
-                  const bossHere = !visitedEvent ? getBossAtCell(cell.id) : null;
+                  const visited  = activeData.visitedCells[cell.id];
+                  const isLocked = cell.id > nextCell;
+                  const isNext   = cell.id === nextCell;
+                  // Show boss icon only on the exact next available cell if boss is lurking
+                  const bossHere = isNext
+                    ? BOSSES.find(b => !bossDefeats[b.name] && bossPositions[b.name] === cell.id)
+                    : undefined;
 
                   let cellIcon: string;
                   let cellBg: string;
                   let cellBorder: string;
                   let cellColor: string;
+                  let opacity = 1;
 
-                  if (visitedEvent) {
-                    if (visitedEvent.type === 'boss') {
-                      cellIcon = BOSSES.find(b => b.name === visitedEvent.bossName)?.emoji ?? '💀';
-                    } else {
-                      cellIcon = CELL_TYPE_ICON[visitedEvent.type];
-                    }
-                    cellBg = `${CELL_TYPE_COLOR[visitedEvent.type]}18`;
-                    cellBorder = `1px solid ${CELL_TYPE_COLOR[visitedEvent.type]}45`;
-                    cellColor = CELL_TYPE_COLOR[visitedEvent.type];
+                  if (visited) {
+                    const icon = visited.type === 'boss'
+                      ? (BOSSES.find(b => b.name === visited.bossName)?.emoji ?? '💀')
+                      : CELL_TYPE_ICON[visited.type];
+                    cellIcon   = icon;
+                    cellBg     = `${CELL_TYPE_COLOR[visited.type]}18`;
+                    cellBorder = `1px solid ${CELL_TYPE_COLOR[visited.type]}45`;
+                    cellColor  = CELL_TYPE_COLOR[visited.type];
+                  } else if (isLocked) {
+                    cellIcon   = '🔒';
+                    cellBg     = 'rgba(0,0,0,0.25)';
+                    cellBorder = '1px solid rgba(255,255,255,0.03)';
+                    cellColor  = '#374151';
+                    opacity    = 0.5;
                   } else if (bossHere) {
-                    cellIcon = bossHere.emoji;
-                    cellBg = 'rgba(220,38,38,0.18)';
+                    cellIcon   = bossHere.emoji;
+                    cellBg     = 'rgba(220,38,38,0.18)';
                     cellBorder = '1px solid rgba(220,38,38,0.5)';
-                    cellColor = '#dc2626';
+                    cellColor  = '#dc2626';
                   } else {
-                    cellIcon = '❓';
-                    cellBg = 'rgba(0,0,0,0.4)';
-                    cellBorder = '1px solid rgba(255,255,255,0.06)';
-                    cellColor = '#4b5563';
+                    // isNext and no boss — available
+                    cellIcon   = '❓';
+                    cellBg     = 'rgba(0,0,0,0.4)';
+                    cellBorder = '1px solid rgba(255,255,255,0.12)';
+                    cellColor  = '#9ca3af';
                   }
 
                   return (
@@ -501,7 +546,7 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
                       key={cell.id}
                       onClick={() => handleCellClick(cell.id, cell.phase)}
                       className="relative aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 transition-opacity active:opacity-70"
-                      style={{ background: cellBg, border: cellBorder }}
+                      style={{ background: cellBg, border: cellBorder, opacity }}
                     >
                       <span className="text-base leading-none">{cellIcon}</span>
                       <span className="text-[9px] font-bold" style={{ color: cellColor }}>{cell.id}</span>
@@ -527,13 +572,39 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
             </div>
           ))}
           <div className="flex items-center gap-1.5 text-[10px]">
-            <span>❓</span>
-            <span className="text-gray-500">Inexplorada</span>
+            <span>❓</span><span className="text-gray-400">Disponível</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <span>🔒</span><span className="text-gray-500">Bloqueada</span>
           </div>
         </div>
       </div>
 
-      {/* ─── Event Modal ─── */}
+      {/* ─── Blocked cell modal ─── */}
+      <Modal isOpen={showBlocked} onClose={() => setShowBlocked(false)} title="🔒 Casa Bloqueada" size="sm">
+        <div className="space-y-4">
+          <div className="p-4 rounded-lg bg-gray-900/60 border border-white/8 text-center">
+            <div className="text-4xl mb-3">🔒</div>
+            <p className="text-sm text-gray-300 leading-relaxed">
+              Você precisa concluir as casas anteriores.
+            </p>
+            {activePlayer && (
+              <p className="text-xs text-gray-500 mt-2">
+                <span style={{ color: CLASS_INFO[activePlayer.playerClass]?.color }}>
+                  {activePlayer.name}
+                </span>{' '}
+                pode abrir apenas a <span className="text-amber-400 font-semibold">Casa {nextCell}</span>.
+              </p>
+            )}
+          </div>
+          <button onClick={() => setShowBlocked(false)}
+            className="w-full btn-dark px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-300">
+            Entendido
+          </button>
+        </div>
+      </Modal>
+
+      {/* ─── Event modal ─── */}
       <Modal isOpen={!!openEvent} onClose={() => setOpenEvent(null)} title={openEvent ? `Casa #${openEvent.cellId}` : ''} size="sm">
         {openEvent && (
           <div className="space-y-4">
@@ -541,7 +612,7 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
               className="flex items-center gap-3 p-3 rounded-lg"
               style={{
                 background: `${PHASE_DEFS.find(p => p.name === openEvent.phase)?.color ?? '#dc2626'}15`,
-                border: `1px solid ${PHASE_DEFS.find(p => p.name === openEvent.phase)?.color ?? '#dc2626'}30`,
+                border:     `1px solid ${PHASE_DEFS.find(p => p.name === openEvent.phase)?.color ?? '#dc2626'}30`,
               }}
             >
               <span className="text-3xl">
@@ -572,7 +643,6 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
                 <p className="text-sm text-gray-300">{openEvent.reward}</p>
               </div>
             )}
-
             {openEvent.penalty && (
               <div className="p-3 rounded-lg bg-red-900/10 border border-red-800/30">
                 <p className="text-xs font-bold text-red-400 mb-1">⚠️ Penalidade</p>
@@ -588,13 +658,13 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
         )}
       </Modal>
 
-      {/* ─── Boss Encounter Modal ─── */}
+      {/* ─── Boss encounter modal ─── */}
       <Modal isOpen={!!openBossName} onClose={() => setOpenBossName(null)} title="👹 Boss Encontrado!" size="sm">
         {openBossName && (() => {
-          const boss = BOSSES.find(b => b.name === openBossName);
+          const boss   = BOSSES.find(b => b.name === openBossName);
           if (!boss) return null;
-          const hp = bossHealths[boss.name] ?? boss.maxHealth;
-          const hpPct = Math.round((hp / boss.maxHealth) * 100);
+          const hp     = bossHealths[boss.name] ?? boss.maxHealth;
+          const hpPct  = Math.round((hp / boss.maxHealth) * 100);
           return (
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-3 rounded-lg bg-red-900/15 border border-red-800/40">
@@ -624,10 +694,10 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
               <div className="p-3 rounded-lg bg-blue-900/10 border border-blue-800/30">
                 <p className="text-xs font-bold text-blue-400 mb-1">
                   <Swords size={11} className="inline mr-1" />
-                  O Boss se moverá na próxima vez que você voltar ao tabuleiro
+                  O Boss se moveu para uma nova posição
                 </p>
                 <p className="text-[11px] text-gray-500">
-                  Esta casa ficou marcada. O combate completo acontece na aba <strong>Bosses</strong>.
+                  O combate completo acontece na aba <strong>Bosses</strong>.
                 </p>
               </div>
 
@@ -640,22 +710,22 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
         })()}
       </Modal>
 
-      {/* ─── History Modal ─── */}
+      {/* ─── History modal ─── */}
       <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="📜 Histórico de Exploração" size="md">
         <div className="space-y-4">
           {players.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {players.map(p => {
-                const info = CLASS_INFO[p.playerClass] || { emoji: '❓', color: '#9ca3af' };
+                const info      = CLASS_INFO[p.playerClass] || { emoji: '❓', color: '#9ca3af' };
                 const isSelected = historyFor === p.id;
-                const count = getVisitedEventsForPlayer(p.id).length;
+                const count     = getVisitedEvents(p.id).length;
                 return (
                   <button key={p.id} onClick={() => setHistoryFor(p.id)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                     style={{
                       background: isSelected ? `${info.color}20` : 'rgba(0,0,0,0.3)',
-                      border: `1px solid ${isSelected ? info.color + '60' : 'rgba(255,255,255,0.08)'}`,
-                      color: isSelected ? info.color : '#9ca3af',
+                      border:     `1px solid ${isSelected ? info.color + '60' : 'rgba(255,255,255,0.08)'}`,
+                      color:       isSelected ? info.color : '#9ca3af',
                     }}>
                     {info.emoji} {p.name}
                     {count > 0 && (
@@ -676,10 +746,9 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
                 </div>
               );
             }
-
-            const events = getVisitedEventsForPlayer(historyFor);
+            const events = getVisitedEvents(historyFor);
             const player = players.find(p => p.id === historyFor);
-            const info = player ? CLASS_INFO[player.playerClass] : null;
+            const info   = player ? CLASS_INFO[player.playerClass] : null;
 
             if (events.length === 0) {
               return (
@@ -696,7 +765,7 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
               <div className="space-y-2">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-gray-500">
-                    {info?.emoji} {player?.name} — {events.length} casa{events.length !== 1 ? 's' : ''} explorada{events.length !== 1 ? 's' : ''}
+                    {info?.emoji} {player?.name} — {events.length} casa{events.length !== 1 ? 's' : ''}
                   </span>
                   <button onClick={() => handleClearHistory(historyFor)}
                     className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-red-400 transition-colors px-2 py-1 rounded">
