@@ -143,13 +143,32 @@ function generateEvent(cellId: number, phase: PhaseName, playerClass?: PlayerCla
 
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 
+// Ensures nextAvailableCell is always >= max(visited) + 1 (heals old corrupt saves)
+function healBoardStorage(storage: BoardStorage): BoardStorage {
+  let changed = false;
+  const healed: BoardStorage = {};
+  for (const [pid, data] of Object.entries(storage)) {
+    const keys = Object.keys(data.visitedCells).map(Number).filter(n => !isNaN(n));
+    const maxVisited = keys.length > 0 ? Math.max(...keys) : 0;
+    const correct = maxVisited + 1;
+    if (data.nextAvailableCell < correct) {
+      healed[pid] = { ...data, nextAvailableCell: correct };
+      changed = true;
+    } else {
+      healed[pid] = data;
+    }
+  }
+  if (changed) saveBoardStorage(healed);
+  return healed;
+}
+
 function loadBoardStorage(): BoardStorage {
   // Try v3 key first
   try {
     const saved = localStorage.getItem(BOARD_KEY);
     if (saved) {
       const parsed = JSON.parse(saved) as BoardStorage;
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (parsed && typeof parsed === 'object') return healBoardStorage(parsed);
     }
   } catch {}
 
@@ -168,7 +187,7 @@ function loadBoardStorage(): BoardStorage {
           nextAvailableCell: maxVisited + 1,
         };
       }
-      return migrated;
+      return healBoardStorage(migrated);
     }
   } catch {}
 
@@ -186,7 +205,7 @@ function loadBoardStorage(): BoardStorage {
         const maxVisited = keys.length > 0 ? Math.max(...keys) : 0;
         migrated[pid] = { visitedCells, nextAvailableCell: maxVisited + 1 };
       }
-      return migrated;
+      return healBoardStorage(migrated);
     }
   } catch {}
 
@@ -205,12 +224,28 @@ function loadBossPositions(): BossPositions {
     if (saved) {
       const parsed = JSON.parse(saved) as BossPositions;
       if (parsed && typeof parsed === 'object') {
-        // Validate: ensure all bosses have a position
-        let complete = true;
+        // Validate: each boss must have a position STRICTLY within its own phase range.
+        // Any boss with a missing or out-of-range position gets reassigned.
+        let needsRepair = false;
+        const repaired = { ...parsed };
         for (const b of BOSSES) {
-          if (typeof parsed[b.name] !== 'number') { complete = false; break; }
+          const phaseDef = PHASE_DEFS.find(p => p.name === b.phase);
+          const pos = repaired[b.name];
+          if (
+            !phaseDef ||
+            typeof pos !== 'number' ||
+            pos < phaseDef.range[0] ||
+            pos > phaseDef.range[1]
+          ) {
+            // Assign a fresh random position within the correct range
+            const span = phaseDef ? phaseDef.range[1] - phaseDef.range[0] + 1 : 1;
+            const base = phaseDef ? phaseDef.range[0] : 1;
+            repaired[b.name] = base + Math.floor(Math.random() * span);
+            needsRepair = true;
+          }
         }
-        if (complete) return parsed;
+        if (needsRepair) saveBossPositions(repaired);
+        return repaired;
       }
     }
   } catch {}
