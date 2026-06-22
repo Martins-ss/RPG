@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { BookOpen, User, Trash2, Swords } from 'lucide-react';
 import { PhaseName, BoardCellType, Player, PlayerClass, BossDefeat } from '../types';
 import Modal from './Modal';
@@ -301,6 +301,46 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
   const activePlayer = players.find(p => p.id === activePlayerId) ?? null;
   const activeData: PlayerBoardData = boardStorage[activePlayerId ?? ''] ?? { visitedCells: {}, nextAvailableCell: 1 };
 
+  // ─── Death detection: reset board + reposition bosses when HP → 0 ────────
+
+  const prevHealthRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const newlyDead: string[] = [];
+    for (const p of players) {
+      const prev = prevHealthRef.current[p.id];
+      if (prev !== undefined && prev > 0 && p.health === 0) {
+        newlyDead.push(p.id);
+      }
+      prevHealthRef.current[p.id] = p.health;
+    }
+
+    if (newlyDead.length === 0) return;
+
+    // Reset board progress for each eliminated player
+    setBoardStorage(prev => {
+      const updated = { ...prev };
+      for (const pid of newlyDead) {
+        updated[pid] = { visitedCells: {}, nextAvailableCell: 1 };
+      }
+      saveBoardStorage(updated);
+      return updated;
+    });
+
+    // Reposition ALL bosses globally after death (new tentativa = new boss positions)
+    setBossPositions(prev => {
+      const newPositions: BossPositions = { ...prev };
+      for (const boss of BOSSES) {
+        if (!bossDefeats[boss.name]) {
+          const newCell = repositionBoss(boss.name, prev[boss.name], {});
+          if (newCell !== null) newPositions[boss.name] = newCell;
+        }
+      }
+      saveBossPositions(newPositions);
+      return newPositions;
+    });
+  }, [players, bossDefeats]);
+
   // ─── Cell click handler ───────────────────────────────────────────────────
 
   const handleCellClick = useCallback((cellId: number, phase: PhaseName) => {
@@ -321,8 +361,16 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
       return;
     }
 
+    // PAST CELL NOT IN HISTORY (migration edge case) — silently ignore
+    if (cellId < next) return;
+
     // NEXT AVAILABLE CELL — check if boss is here
-    const bossHere = BOSSES.find(b => !bossDefeats[b.name] && bossPositions[b.name] === cellId);
+    // Phase check prevents a boss from a different biome appearing on this cell
+    const bossHere = BOSSES.find(b =>
+      !bossDefeats[b.name] &&
+      bossPositions[b.name] === cellId &&
+      b.phase === phase
+    );
 
     if (bossHere) {
       // Mark cell as visited with boss event
@@ -503,9 +551,15 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
                   const visited  = activeData.visitedCells[cell.id];
                   const isLocked = cell.id > nextCell;
                   const isNext   = cell.id === nextCell;
-                  // Show boss icon only on the exact next available cell if boss is lurking
+                  const isPast   = cell.id < nextCell && !visited; // edge case: passed but no stored event
+
+                  // Boss shown only on the EXACT next available cell AND correct phase
                   const bossHere = isNext
-                    ? BOSSES.find(b => !bossDefeats[b.name] && bossPositions[b.name] === cell.id)
+                    ? BOSSES.find(b =>
+                        !bossDefeats[b.name] &&
+                        bossPositions[b.name] === cell.id &&
+                        b.phase === phase.name
+                      )
                     : undefined;
 
                   let cellIcon: string;
@@ -522,23 +576,30 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
                     cellBg     = `${CELL_TYPE_COLOR[visited.type]}18`;
                     cellBorder = `1px solid ${CELL_TYPE_COLOR[visited.type]}45`;
                     cellColor  = CELL_TYPE_COLOR[visited.type];
-                  } else if (isLocked) {
-                    cellIcon   = '🔒';
-                    cellBg     = 'rgba(0,0,0,0.25)';
-                    cellBorder = '1px solid rgba(255,255,255,0.03)';
-                    cellColor  = '#374151';
-                    opacity    = 0.5;
                   } else if (bossHere) {
                     cellIcon   = bossHere.emoji;
                     cellBg     = 'rgba(220,38,38,0.18)';
                     cellBorder = '1px solid rgba(220,38,38,0.5)';
                     cellColor  = '#dc2626';
-                  } else {
-                    // isNext and no boss — available
+                  } else if (isNext) {
+                    // Next available — no boss
                     cellIcon   = '❓';
                     cellBg     = 'rgba(0,0,0,0.4)';
                     cellBorder = '1px solid rgba(255,255,255,0.12)';
                     cellColor  = '#9ca3af';
+                  } else if (isPast) {
+                    // Was cleared in a previous run (migration edge case)
+                    cellIcon   = '✅';
+                    cellBg     = 'rgba(0,0,0,0.2)';
+                    cellBorder = '1px solid rgba(255,255,255,0.04)';
+                    cellColor  = '#374151';
+                  } else {
+                    // isLocked
+                    cellIcon   = '🔒';
+                    cellBg     = 'rgba(0,0,0,0.25)';
+                    cellBorder = '1px solid rgba(255,255,255,0.03)';
+                    cellColor  = '#374151';
+                    opacity    = 0.5;
                   }
 
                   return (

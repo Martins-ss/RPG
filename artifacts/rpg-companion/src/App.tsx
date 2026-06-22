@@ -15,6 +15,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const [campaignPhase, setCampaignPhase] = useState<'menu' | 'playing'>('menu');
+  const [boardResetKey, setBoardResetKey] = useState(0);
   const store = useGameStore();
 
   // Campaign start screen — always shown on fresh load
@@ -26,7 +27,7 @@ export default function App() {
           playerCount={store.players.length}
           defeatedBossCount={Object.keys(store.bossDefeats).length}
           onContinue={() => setCampaignPhase('playing')}
-          onNewCampaign={() => { store.resetAll(); setCampaignPhase('playing'); }}
+          onNewCampaign={() => { store.resetAll(); setBoardResetKey(k => k + 1); setCampaignPhase('playing'); }}
         />
       </ErrorBoundary>
     );
@@ -96,6 +97,7 @@ export default function App() {
       case 'tabuleiro':
         return (
           <TabuleiroPanel
+            key={boardResetKey}
             players={store.players}
             bossHealths={store.bossHealths}
             bossDefeats={store.bossDefeats}

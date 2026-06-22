@@ -425,6 +425,10 @@ export function useGameStore() {
       localStorage.removeItem(BOSS_DEFEATS_KEY);
       localStorage.removeItem('reino-rei-sombrio-tabuleiro');
       localStorage.removeItem(TABULEIRO_HIST_KEY);
+      // Board v2 / v3 keys used by TabuleiroPanel
+      localStorage.removeItem('reino-rei-sombrio-tabuleiro-v2');
+      localStorage.removeItem('reino-rei-sombrio-tabuleiro-v3');
+      localStorage.removeItem('reino-rei-sombrio-boss-positions-v2');
     } catch {}
   }, [updateState]);
 
