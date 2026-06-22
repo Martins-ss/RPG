@@ -3,14 +3,8 @@ import { BookOpen, User, Trash2, Swords } from 'lucide-react';
 import { PhaseName, BoardCellType, Player, PlayerClass, BossDefeat } from '../types';
 import Modal from './Modal';
 import { CLASS_INFO, CLASS_CARDS, BOSSES } from '../gameData';
+import { ck } from '../campaignManager';
 import { v4 as uuidv4 } from 'uuid';
-
-// ─── Storage keys ────────────────────────────────────────────────────────────
-
-const BOARD_KEY          = 'reino-rei-sombrio-tabuleiro-v3';
-const BOSS_POS_KEY       = 'reino-rei-sombrio-boss-positions-v2';
-const HISTORY_KEY_LEGACY = 'reino-rei-sombrio-tabuleiro-historico';
-const BOARD_KEY_LEGACY   = 'reino-rei-sombrio-tabuleiro-v2';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -144,7 +138,7 @@ function generateEvent(cellId: number, phase: PhaseName, playerClass?: PlayerCla
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 
 // Ensures nextAvailableCell is always >= max(visited) + 1 (heals old corrupt saves)
-function healBoardStorage(storage: BoardStorage): BoardStorage {
+function healBoardStorage(storage: BoardStorage, key: string): BoardStorage {
   let changed = false;
   const healed: BoardStorage = {};
   for (const [pid, data] of Object.entries(storage)) {
@@ -158,74 +152,36 @@ function healBoardStorage(storage: BoardStorage): BoardStorage {
       healed[pid] = data;
     }
   }
-  if (changed) saveBoardStorage(healed);
+  if (changed) saveBoardStorage(healed, key);
   return healed;
 }
 
-function loadBoardStorage(): BoardStorage {
-  // Try v3 key first
+// Loads board data for the given campaign-scoped key.
+// Old global keys were already migrated by campaignManager.migrateOldDataIfNeeded().
+function loadBoardStorage(key: string): BoardStorage {
   try {
-    const saved = localStorage.getItem(BOARD_KEY);
+    const saved = localStorage.getItem(key);
     if (saved) {
       const parsed = JSON.parse(saved) as BoardStorage;
-      if (parsed && typeof parsed === 'object') return healBoardStorage(parsed);
+      if (parsed && typeof parsed === 'object') return healBoardStorage(parsed, key);
     }
   } catch {}
-
-  // Migrate from v2
-  try {
-    const v2 = localStorage.getItem(BOARD_KEY_LEGACY);
-    if (v2) {
-      const parsed = JSON.parse(v2) as Record<string, { visitedCells?: Record<number, CellEvent>; bossCells?: Record<string, number> }>;
-      const migrated: BoardStorage = {};
-      for (const [pid, data] of Object.entries(parsed)) {
-        const visited = data.visitedCells ?? {};
-        const keys = Object.keys(visited).map(Number).filter(n => !isNaN(n));
-        const maxVisited = keys.length > 0 ? Math.max(...keys) : 0;
-        migrated[pid] = {
-          visitedCells: visited,
-          nextAvailableCell: maxVisited + 1,
-        };
-      }
-      return healBoardStorage(migrated);
-    }
-  } catch {}
-
-  // Migrate from legacy history key
-  try {
-    const legacy = localStorage.getItem(HISTORY_KEY_LEGACY);
-    if (legacy) {
-      const parsed = JSON.parse(legacy) as Record<string, { events?: CellEvent[] }>;
-      const migrated: BoardStorage = {};
-      for (const [pid, ph] of Object.entries(parsed)) {
-        const visitedCells: Record<number, CellEvent> = {};
-        const sorted = [...(ph.events ?? [])].sort((a, b) => a.timestamp - b.timestamp);
-        for (const ev of sorted) visitedCells[ev.cellId] = ev;
-        const keys = Object.keys(visitedCells).map(Number);
-        const maxVisited = keys.length > 0 ? Math.max(...keys) : 0;
-        migrated[pid] = { visitedCells, nextAvailableCell: maxVisited + 1 };
-      }
-      return healBoardStorage(migrated);
-    }
-  } catch {}
-
   return {};
 }
 
-function saveBoardStorage(s: BoardStorage) {
-  try { localStorage.setItem(BOARD_KEY, JSON.stringify(s)); } catch {}
+function saveBoardStorage(s: BoardStorage, key: string) {
+  try { localStorage.setItem(key, JSON.stringify(s)); } catch {}
 }
 
 // ─── Global boss position helpers ────────────────────────────────────────────
 
-function loadBossPositions(): BossPositions {
+// Load boss positions, validating each boss is strictly within its own phase range.
+function loadBossPositions(key: string): BossPositions {
   try {
-    const saved = localStorage.getItem(BOSS_POS_KEY);
+    const saved = localStorage.getItem(key);
     if (saved) {
       const parsed = JSON.parse(saved) as BossPositions;
       if (parsed && typeof parsed === 'object') {
-        // Validate: each boss must have a position STRICTLY within its own phase range.
-        // Any boss with a missing or out-of-range position gets reassigned.
         let needsRepair = false;
         const repaired = { ...parsed };
         for (const b of BOSSES) {
@@ -237,22 +193,21 @@ function loadBossPositions(): BossPositions {
             pos < phaseDef.range[0] ||
             pos > phaseDef.range[1]
           ) {
-            // Assign a fresh random position within the correct range
             const span = phaseDef ? phaseDef.range[1] - phaseDef.range[0] + 1 : 1;
             const base = phaseDef ? phaseDef.range[0] : 1;
             repaired[b.name] = base + Math.floor(Math.random() * span);
             needsRepair = true;
           }
         }
-        if (needsRepair) saveBossPositions(repaired);
+        if (needsRepair) saveBossPositions(repaired, key);
         return repaired;
       }
     }
   } catch {}
-  return initBossPositions({});
+  return initBossPositions({}, key);
 }
 
-function initBossPositions(existing: BossPositions): BossPositions {
+function initBossPositions(existing: BossPositions, key: string): BossPositions {
   const result: BossPositions = { ...existing };
   for (const boss of BOSSES) {
     if (typeof result[boss.name] !== 'number') {
@@ -263,11 +218,12 @@ function initBossPositions(existing: BossPositions): BossPositions {
       }
     }
   }
+  saveBossPositions(result, key);
   return result;
 }
 
-function saveBossPositions(p: BossPositions) {
-  try { localStorage.setItem(BOSS_POS_KEY, JSON.stringify(p)); } catch {}
+function saveBossPositions(p: BossPositions, key: string) {
+  try { localStorage.setItem(key, JSON.stringify(p)); } catch {}
 }
 
 // Reassign a single boss to a new global position after an encounter.
@@ -307,25 +263,32 @@ function formatTime(ts: number): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 interface TabuleiroProps {
+  campaignId: string;
   players: Player[];
   bossHealths: Record<string, number>;
   bossDefeats: Record<string, BossDefeat>;
 }
 
-export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: TabuleiroProps) {
+export default function TabuleiroPanel({ campaignId, players, bossHealths, bossDefeats }: TabuleiroProps) {
+  // Campaign-scoped storage keys — stable for the lifetime of this component
+  const keysRef = useRef({
+    board:   ck(campaignId, 'board'),
+    bossPos: ck(campaignId, 'boss-pos'),
+  });
+
   const [activePlayerId, setActivePlayerId] = useState<string | null>(
     players.length > 0 ? players[0].id : null
   );
 
   // Per-player board state (visited cells + sequential progress)
-  const [boardStorage, setBoardStorage] = useState<BoardStorage>(loadBoardStorage);
+  const [boardStorage, setBoardStorage] = useState<BoardStorage>(() =>
+    loadBoardStorage(keysRef.current.board)
+  );
 
   // Global boss positions — loaded ONCE, only mutated on encounter
-  const [bossPositions, setBossPositions] = useState<BossPositions>(() => {
-    const loaded = loadBossPositions();
-    saveBossPositions(loaded); // persist init if missing
-    return loaded;
-  });
+  const [bossPositions, setBossPositions] = useState<BossPositions>(() =>
+    loadBossPositions(keysRef.current.bossPos)
+  );
 
   const [openEvent, setOpenEvent]       = useState<CellEvent | null>(null);
   const [openBossName, setOpenBossName] = useState<string | null>(null);
@@ -358,7 +321,7 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
       for (const pid of newlyDead) {
         updated[pid] = { visitedCells: {}, nextAvailableCell: 1 };
       }
-      saveBoardStorage(updated);
+      saveBoardStorage(updated, keysRef.current.board);
       return updated;
     });
 
@@ -371,7 +334,7 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
           if (newCell !== null) newPositions[boss.name] = newCell;
         }
       }
-      saveBossPositions(newPositions);
+      saveBossPositions(newPositions, keysRef.current.bossPos);
       return newPositions;
     });
   }, [players, bossDefeats]);
@@ -434,12 +397,12 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
           ...prev,
           [activePlayerId]: { visitedCells: updatedVisited, nextAvailableCell: newNext },
         };
-        saveBoardStorage(updated);
+        saveBoardStorage(updated, keysRef.current.board);
         return updated;
       });
 
       setBossPositions(newPositions);
-      saveBossPositions(newPositions);
+      saveBossPositions(newPositions, keysRef.current.bossPos);
       setOpenBossName(bossHere.name);
       return;
     }
@@ -454,7 +417,7 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
         ...prev,
         [activePlayerId]: { visitedCells: updatedVisited, nextAvailableCell: newNext },
       };
-      saveBoardStorage(updated);
+      saveBoardStorage(updated, keysRef.current.board);
       return updated;
     });
 
@@ -467,7 +430,7 @@ export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: Ta
         ...prev,
         [playerId]: { visitedCells: {}, nextAvailableCell: 1 },
       };
-      saveBoardStorage(updated);
+      saveBoardStorage(updated, keysRef.current.board);
       return updated;
     });
   }, []);

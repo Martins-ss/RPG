@@ -1,12 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Player, GameLog, InventoryItem, ArmorPieceId, ArmorProgress, BossDefeat, DEFAULT_ARMOR } from './types';
 import { xpForLevel, BOSSES } from './gameData';
 import { v4 as uuidv4 } from 'uuid';
-
-const STORAGE_KEY         = 'reino-rei-sombrio';
-const BOSS_STORAGE_KEY    = 'reino-rei-sombrio-bosses';
-const BOSS_DEFEATS_KEY    = 'reino-rei-sombrio-boss-derrotas';
-const TABULEIRO_HIST_KEY  = 'reino-rei-sombrio-tabuleiro-historico';
+import { ck, touchCampaign } from './campaignManager';
 
 interface GameState {
   players: Player[];
@@ -63,9 +59,9 @@ function migratePlayer(p: Player): Player {
   };
 }
 
-function loadState(): GameState {
+function loadState(storageKey: string): GameState {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (!parsed || typeof parsed !== 'object') return { players: [], logs: [] };
@@ -79,19 +75,22 @@ function loadState(): GameState {
     }
   } catch (error) {
     console.error('[Store] Erro ao carregar localStorage:', error);
-    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    try { localStorage.removeItem(storageKey); } catch {}
   }
   return { players: [], logs: [] };
 }
 
-function saveState(state: GameState) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+function saveState(state: GameState, storageKey: string, campaignId: string) {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(state));
+    touchCampaign(campaignId);
+  } catch {}
 }
 
-function loadBossHealths(): BossHealthState {
+function loadBossHealths(storageKey: string): BossHealthState {
   const defaults: BossHealthState = Object.fromEntries(BOSSES.map(b => [b.name, b.maxHealth]));
   try {
-    const saved = localStorage.getItem(BOSS_STORAGE_KEY);
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && typeof parsed === 'object') {
@@ -109,13 +108,13 @@ function loadBossHealths(): BossHealthState {
   return defaults;
 }
 
-function saveBossHealths(healths: BossHealthState) {
-  try { localStorage.setItem(BOSS_STORAGE_KEY, JSON.stringify(healths)); } catch {}
+function saveBossHealths(healths: BossHealthState, storageKey: string) {
+  try { localStorage.setItem(storageKey, JSON.stringify(healths)); } catch {}
 }
 
-function loadBossDefeats(): BossDefeatsState {
+function loadBossDefeats(storageKey: string): BossDefeatsState {
   try {
-    const saved = localStorage.getItem(BOSS_DEFEATS_KEY);
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && typeof parsed === 'object') return parsed;
@@ -124,26 +123,34 @@ function loadBossDefeats(): BossDefeatsState {
   return {};
 }
 
-function saveBossDefeats(d: BossDefeatsState) {
-  try { localStorage.setItem(BOSS_DEFEATS_KEY, JSON.stringify(d)); } catch {}
+function saveBossDefeats(d: BossDefeatsState, storageKey: string) {
+  try { localStorage.setItem(storageKey, JSON.stringify(d)); } catch {}
 }
 
 // ─── Store Hook ───────────────────────────────────────────────────────────────
 
-export function useGameStore() {
-  const [state, setState] = useState<GameState>(loadState);
-  const [bossHealths, setBossHealths] = useState<BossHealthState>(loadBossHealths);
-  const [bossDefeats, setBossDefeats] = useState<BossDefeatsState>(loadBossDefeats);
+export function useGameStore(campaignId: string) {
+  const keysRef = useRef({
+    players:   ck(campaignId, 'players'),
+    bosses:    ck(campaignId, 'bosses'),
+    bossDef:   ck(campaignId, 'boss-defeats'),
+  });
 
-  useEffect(() => { saveBossHealths(bossHealths); }, [bossHealths]);
+  const [state, setState]             = useState<GameState>(() => loadState(keysRef.current.players));
+  const [bossHealths, setBossHealths] = useState<BossHealthState>(() => loadBossHealths(keysRef.current.bosses));
+  const [bossDefeats, setBossDefeats] = useState<BossDefeatsState>(() => loadBossDefeats(keysRef.current.bossDef));
+
+  useEffect(() => {
+    saveBossHealths(bossHealths, keysRef.current.bosses);
+  }, [bossHealths]);
 
   const updateState = useCallback((updater: (prev: GameState) => GameState) => {
     setState(prev => {
       const next = updater(prev);
-      saveState(next);
+      saveState(next, keysRef.current.players, campaignId);
       return next;
     });
-  }, []);
+  }, [campaignId]);
 
   // ─── Logs ──────────────────────────────────────────────────────────────────
 
@@ -403,7 +410,7 @@ export function useGameStore() {
     const defeat: BossDefeat = { defeatedBy, defeatedAt: Date.now() };
     setBossDefeats(prev => {
       const next = { ...prev, [bossName]: defeat };
-      saveBossDefeats(next);
+      saveBossDefeats(next, keysRef.current.bossDef);
       return next;
     });
     setBossHealths(prev => ({ ...prev, [bossName]: 0 }));
@@ -414,23 +421,19 @@ export function useGameStore() {
     return bossHealths[bossName] ?? maxHealth;
   }, [bossHealths]);
 
-  // ─── Campaign ──────────────────────────────────────────────────────────────
+  // ─── Campaign reset (clears this campaign's game data, keeps the campaign entry) ──
 
   const resetAll = useCallback(() => {
     updateState(() => ({ players: [], logs: [] }));
     setBossHealths(Object.fromEntries(BOSSES.map(b => [b.name, b.maxHealth])));
     setBossDefeats({});
     try {
-      localStorage.removeItem(BOSS_STORAGE_KEY);
-      localStorage.removeItem(BOSS_DEFEATS_KEY);
-      localStorage.removeItem('reino-rei-sombrio-tabuleiro');
-      localStorage.removeItem(TABULEIRO_HIST_KEY);
-      // Board v2 / v3 keys used by TabuleiroPanel
-      localStorage.removeItem('reino-rei-sombrio-tabuleiro-v2');
-      localStorage.removeItem('reino-rei-sombrio-tabuleiro-v3');
-      localStorage.removeItem('reino-rei-sombrio-boss-positions-v2');
+      localStorage.removeItem(keysRef.current.bosses);
+      localStorage.removeItem(keysRef.current.bossDef);
+      localStorage.removeItem(ck(campaignId, 'board'));
+      localStorage.removeItem(ck(campaignId, 'boss-pos'));
     } catch {}
-  }, [updateState]);
+  }, [updateState, campaignId]);
 
   return {
     players: state.players,

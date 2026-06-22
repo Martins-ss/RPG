@@ -1,0 +1,2 @@
+- [Multi-campaign architecture](multi-campaign-arch.md) — all storage keys scoped per-campaign via ck(id, suffix); GameApp remounts via key={campaignId} to reset all hooks cleanly.
+- [Boss duplication fix](boss-fix.md) — bosses are isolated per-campaign; loadBossPositions validates range on load; phase check prevents cross-biome bosses appearing.
