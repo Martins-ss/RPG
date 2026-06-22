@@ -1,13 +1,14 @@
-import { useState, useCallback } from 'react';
-import { RotateCcw, BookOpen, User, Trash2 } from 'lucide-react';
-import { PhaseName, BoardCellType, Player, PlayerClass } from '../types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { BookOpen, User, Trash2, Swords } from 'lucide-react';
+import { PhaseName, BoardCellType, Player, PlayerClass, BossDefeat } from '../types';
 import Modal from './Modal';
-import { CLASS_INFO, CLASS_CARDS } from '../gameData';
+import { CLASS_INFO, CLASS_CARDS, BOSSES } from '../gameData';
 import { v4 as uuidv4 } from 'uuid';
 
 // ─── Storage ────────────────────────────────────────────────────────────────
 
-const HISTORY_KEY = 'reino-rei-sombrio-tabuleiro-historico';
+const BOARD_V2_KEY = 'reino-rei-sombrio-tabuleiro-v2';
+const HISTORY_KEY_LEGACY = 'reino-rei-sombrio-tabuleiro-historico';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -20,17 +21,16 @@ interface CellEvent {
   description: string;
   reward?: string;
   penalty?: string;
+  bossName?: string;
   timestamp: number;
 }
 
-interface PlayerHistory {
-  playerId: string;
-  playerName: string;
-  playerClass: string;
-  events: CellEvent[];
+interface PlayerBoardData {
+  visitedCells: Record<number, CellEvent>;
+  bossCells: Record<string, number>;
 }
 
-type PlayerHistories = Record<string, PlayerHistory>;
+type BoardStorage = Record<string, PlayerBoardData>;
 
 // ─── Phase definitions ───────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ const PHASE_DEFS: { name: PhaseName; emoji: string; color: string; cells: number
 
 // ─── Event pools ─────────────────────────────────────────────────────────────
 
-const CELL_CONTENT: Record<PhaseName, Record<BoardCellType, { content: string; description: string; reward?: string; penalty?: string }[]>> = {
+const CELL_CONTENT: Record<PhaseName, Record<Exclude<BoardCellType,'boss'>, { content: string; description: string; reward?: string; penalty?: string }[]>> = {
   'Floresta das Sombras': {
     vazia:     [{ content: 'Caminho Livre', description: 'O caminho está limpo. Avance sem perigos.' },
                 { content: 'Clareira Segura', description: 'Uma clareira tranquila na floresta sombria.' }],
@@ -99,20 +99,19 @@ const CELL_CONTENT: Record<PhaseName, Record<BoardCellType, { content: string; d
   },
 };
 
-// Type weights per phase
-const TYPE_POOL: Record<PhaseName, BoardCellType[]> = {
+const TYPE_POOL: Record<PhaseName, Exclude<BoardCellType,'boss'>[]> = {
   'Floresta das Sombras':   ['vazia','vazia','armadilha','armadilha','armadilha','monstro','monstro','ouro','ouro','carta','carta','tesouro','cristal','especial'],
   'Cidade Abandonada':      ['vazia','armadilha','armadilha','armadilha','monstro','monstro','ouro','ouro','carta','carta','tesouro','cristal','especial'],
   'Castelo do Rei Sombrio': ['armadilha','armadilha','armadilha','armadilha','monstro','monstro','monstro','ouro','ouro','carta','carta','tesouro','cristal','especial','vazia'],
 };
 
 const CELL_TYPE_ICON: Record<BoardCellType, string> = {
-  vazia:'⬜', armadilha:'⚠️', carta:'🃏', tesouro:'💎', ouro:'💰', cristal:'🔮', monstro:'👹', especial:'🌟',
+  vazia:'⬜', armadilha:'⚠️', carta:'🃏', tesouro:'💎', ouro:'💰', cristal:'🔮', monstro:'👹', especial:'🌟', boss:'💀',
 };
 
 const CELL_TYPE_COLOR: Record<BoardCellType, string> = {
   vazia:'#4b5563', armadilha:'#f59e0b', carta:'#8b5cf6', tesouro:'#3b82f6',
-  ouro:'#eab308', cristal:'#ec4899', monstro:'#ef4444', especial:'#f97316',
+  ouro:'#eab308', cristal:'#ec4899', monstro:'#ef4444', especial:'#f97316', boss:'#dc2626',
 };
 
 // ─── Event generator ─────────────────────────────────────────────────────────
@@ -127,14 +126,13 @@ function generateEvent(cellId: number, phase: PhaseName, playerClass?: PlayerCla
   let penalty: string | undefined;
 
   if (type === 'carta' && playerClass && CLASS_CARDS[playerClass]) {
-    // Draw a class-specific card for the active player
     const cards = CLASS_CARDS[playerClass];
     const card = cards[Math.floor(Math.random() * cards.length)];
     content = card.name;
     description = card.description;
     reward = `🃏 Carta de ${playerClass}: "${card.name}"`;
   } else {
-    const options = CELL_CONTENT[phase][type];
+    const options = CELL_CONTENT[phase][type as Exclude<BoardCellType,'boss'>];
     const pick = options[Math.floor(Math.random() * options.length)];
     content = pick.content;
     description = pick.description;
@@ -147,98 +145,253 @@ function generateEvent(cellId: number, phase: PhaseName, playerClass?: PlayerCla
 
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 
-function loadHistories(): PlayerHistories {
+function loadBoardStorage(): BoardStorage {
   try {
-    const saved = localStorage.getItem(HISTORY_KEY);
+    const saved = localStorage.getItem(BOARD_V2_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (parsed && typeof parsed === 'object') return parsed as BoardStorage;
     }
   } catch {}
+
+  // Migrate from legacy format
+  try {
+    const legacy = localStorage.getItem(HISTORY_KEY_LEGACY);
+    if (legacy) {
+      const parsed = JSON.parse(legacy) as Record<string, { playerId: string; playerName: string; events: CellEvent[] }>;
+      const migrated: BoardStorage = {};
+      for (const [pid, ph] of Object.entries(parsed)) {
+        const visitedCells: Record<number, CellEvent> = {};
+        const sorted = [...ph.events].sort((a, b) => a.timestamp - b.timestamp);
+        for (const ev of sorted) {
+          visitedCells[ev.cellId] = ev;
+        }
+        migrated[pid] = { visitedCells, bossCells: {} };
+      }
+      return migrated;
+    }
+  } catch {}
+
   return {};
 }
 
-function saveHistories(h: PlayerHistories) {
-  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch {}
+function saveBoardStorage(storage: BoardStorage) {
+  try { localStorage.setItem(BOARD_V2_KEY, JSON.stringify(storage)); } catch {}
 }
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+// ─── Boss cell assignment ─────────────────────────────────────────────────────
+
+function assignBossCells(
+  playerData: PlayerBoardData,
+  bossDefeats: Record<string, BossDefeat>
+): Record<string, number> {
+  const newBossCells: Record<string, number> = {};
+
+  for (const boss of BOSSES) {
+    if (bossDefeats[boss.name]) continue;
+
+    const phaseDef = PHASE_DEFS.find(p => p.name === boss.phase);
+    if (!phaseDef) continue;
+
+    const visitedIds = new Set(
+      Object.keys(playerData.visitedCells).map(k => Number(k))
+    );
+    const prevCell = playerData.bossCells[boss.name];
+
+    const available: number[] = [];
+    for (let i = phaseDef.range[0]; i <= phaseDef.range[1]; i++) {
+      if (!visitedIds.has(i) && i !== prevCell) {
+        available.push(i);
+      }
+    }
+
+    if (available.length > 0) {
+      newBossCells[boss.name] = available[Math.floor(Math.random() * available.length)];
+    } else {
+      // Fallback: try without excluding prev cell
+      const fallback: number[] = [];
+      for (let i = phaseDef.range[0]; i <= phaseDef.range[1]; i++) {
+        if (!visitedIds.has(i)) fallback.push(i);
+      }
+      if (fallback.length > 0) {
+        newBossCells[boss.name] = fallback[Math.floor(Math.random() * fallback.length)];
+      }
+      // else all cells visited — boss has nowhere to go, not assigned
+    }
+  }
+
+  return newBossCells;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 interface TabuleiroProps {
   players: Player[];
+  bossHealths: Record<string, number>;
+  bossDefeats: Record<string, BossDefeat>;
 }
 
-export default function TabuleiroPanel({ players }: TabuleiroProps) {
+export default function TabuleiroPanel({ players, bossHealths, bossDefeats }: TabuleiroProps) {
   const [activePlayerId, setActivePlayerId] = useState<string | null>(
     players.length > 0 ? players[0].id : null
   );
+  const [boardStorage, setBoardStorage] = useState<BoardStorage>(loadBoardStorage);
   const [openEvent, setOpenEvent] = useState<CellEvent | null>(null);
-  const [playerHistories, setPlayerHistories] = useState<PlayerHistories>(loadHistories);
+  const [openBossName, setOpenBossName] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
 
-  const activePlayer = players.find(p => p.id === activePlayerId);
+  const activePlayer = players.find(p => p.id === activePlayerId) ?? null;
+
+  // Track previous player to detect switches vs. first mount
+  const prevPlayerRef = useRef<string | null>(null);
+
+  // Reassign boss cells whenever active player changes (or on first mount)
+  useEffect(() => {
+    if (!activePlayerId) return;
+
+    setBoardStorage(prev => {
+      const playerData: PlayerBoardData = prev[activePlayerId] ?? { visitedCells: {}, bossCells: {} };
+      const newBossCells = assignBossCells(playerData, bossDefeats);
+
+      const updated: BoardStorage = {
+        ...prev,
+        [activePlayerId]: {
+          ...playerData,
+          bossCells: newBossCells,
+        },
+      };
+      saveBoardStorage(updated);
+      return updated;
+    });
+
+    prevPlayerRef.current = activePlayerId;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePlayerId]);
+
+  const activePlayerData = activePlayerId ? (boardStorage[activePlayerId] ?? { visitedCells: {}, bossCells: {} }) : null;
+
+  // Which boss (if any) is hiding in this cell for the active player?
+  function getBossAtCell(cellId: number): typeof BOSSES[number] | null {
+    if (!activePlayerData) return null;
+    for (const boss of BOSSES) {
+      if (bossDefeats[boss.name]) continue;
+      if (activePlayerData.bossCells[boss.name] === cellId) return boss;
+    }
+    return null;
+  }
 
   const handleCellClick = useCallback((cellId: number, phase: PhaseName) => {
-    // Generate a new random event, optionally using the player's class for carta events
-    const event = generateEvent(cellId, phase, activePlayer?.playerClass as PlayerClass | undefined);
+    if (!activePlayerId || !activePlayer) return;
 
-    // Save to the active player's history
-    if (activePlayerId && activePlayer) {
-      setPlayerHistories(prev => {
-        const existing = prev[activePlayerId] ?? {
-          playerId: activePlayerId,
-          playerName: activePlayer.name,
-          playerClass: activePlayer.playerClass,
-          events: [],
-        };
-        const updated: PlayerHistory = {
-          ...existing,
-          events: [event, ...existing.events].slice(0, 200),
-        };
-        const next = { ...prev, [activePlayerId]: updated };
-        saveHistories(next);
-        return next;
-      });
+    const playerData: PlayerBoardData = boardStorage[activePlayerId] ?? { visitedCells: {}, bossCells: {} };
+
+    // Already visited — show the stored event
+    if (playerData.visitedCells[cellId]) {
+      setOpenEvent(playerData.visitedCells[cellId]);
+      return;
     }
 
-    setOpenEvent(event);
-  }, [activePlayerId, activePlayer]);
+    // Check if this is a boss cell
+    const bossHere = getBossAtCell(cellId);
+    if (bossHere) {
+      // Create a boss event and mark cell as visited
+      const bossEvent: CellEvent = {
+        id: uuidv4(),
+        cellId,
+        phase,
+        type: 'boss',
+        content: bossHere.name,
+        description: bossHere.story,
+        bossName: bossHere.name,
+        timestamp: Date.now(),
+      };
 
-  const handleCloseEvent = useCallback(() => {
-    // Discard the current event — cell returns to ❓
-    setOpenEvent(null);
-  }, []);
+      setBoardStorage(prev => {
+        const pData = prev[activePlayerId] ?? { visitedCells: {}, bossCells: {} };
+        const updated: BoardStorage = {
+          ...prev,
+          [activePlayerId]: {
+            ...pData,
+            visitedCells: { ...pData.visitedCells, [cellId]: bossEvent },
+          },
+        };
+        saveBoardStorage(updated);
+        return updated;
+      });
+
+      setOpenBossName(bossHere.name);
+      return;
+    }
+
+    // Normal unvisited cell — generate event and mark visited
+    const event = generateEvent(cellId, phase, activePlayer.playerClass as PlayerClass);
+
+    setBoardStorage(prev => {
+      const pData = prev[activePlayerId] ?? { visitedCells: {}, bossCells: {} };
+      const updated: BoardStorage = {
+        ...prev,
+        [activePlayerId]: {
+          ...pData,
+          visitedCells: { ...pData.visitedCells, [cellId]: event },
+        },
+      };
+      saveBoardStorage(updated);
+      return updated;
+    });
+
+    setOpenEvent(event);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePlayerId, activePlayer, boardStorage]);
 
   const handleClearHistory = useCallback((playerId: string) => {
-    setPlayerHistories(prev => {
-      const next = { ...prev };
-      if (next[playerId]) next[playerId] = { ...next[playerId], events: [] };
-      saveHistories(next);
-      return next;
+    setBoardStorage(prev => {
+      const updated: BoardStorage = {
+        ...prev,
+        [playerId]: { visitedCells: {}, bossCells: {} },
+      };
+      saveBoardStorage(updated);
+      return updated;
     });
   }, []);
 
-  // Build display cells from phase definitions
   const displayCells = PHASE_DEFS.flatMap(phase =>
     Array.from({ length: phase.cells }, (_, i) => ({
       id: phase.range[0] + i,
-      phase: phase.name,
+      phase: phase.name as PhaseName,
     }))
   );
+
+  // Visited events sorted newest first for history
+  function getVisitedEventsForPlayer(playerId: string): CellEvent[] {
+    const data = boardStorage[playerId];
+    if (!data) return [];
+    return Object.values(data.visitedCells).sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  const visitedCount = activePlayerId
+    ? Object.keys(boardStorage[activePlayerId]?.visitedCells ?? {}).length
+    : 0;
 
   return (
     <div className="space-y-4 animate-fadeIn">
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-xl font-bold text-red-400" style={{ fontFamily: 'Cinzel, serif' }}>
-          🗺️ Tabuleiro de Exploração
-        </h2>
+        <div>
+          <h2 className="text-xl font-bold text-red-400" style={{ fontFamily: 'Cinzel, serif' }}>
+            🗺️ Tabuleiro de Exploração
+          </h2>
+          {activePlayer && (
+            <p className="text-[10px] text-gray-600 mt-0.5">
+              {activePlayer.name}: {visitedCount} casa{visitedCount !== 1 ? 's' : ''} explorada{visitedCount !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
         <button
           onClick={() => { setShowHistory(true); setHistoryFor(activePlayerId); }}
           className="btn-dark px-3 py-1.5 rounded-lg text-xs text-amber-400 flex items-center gap-1"
@@ -250,7 +403,7 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
       {/* Player selector */}
       <div className="card-dark rounded-xl p-3">
         <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-          <User size={10} /> Quem está abrindo as casas?
+          <User size={10} /> Quem está explorando?
         </label>
         {players.length === 0 ? (
           <p className="text-sm text-gray-500">Nenhum jogador cadastrado. Adicione jogadores na aba "Jogadores".</p>
@@ -259,6 +412,7 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
             {players.map(p => {
               const info = CLASS_INFO[p.playerClass] || { emoji: '❓', color: '#9ca3af' };
               const isActive = activePlayerId === p.id;
+              const pVisited = Object.keys(boardStorage[p.id]?.visitedCells ?? {}).length;
               return (
                 <button
                   key={p.id}
@@ -272,6 +426,11 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
                 >
                   <span>{info.emoji}</span>
                   <span>{p.name}</span>
+                  {pVisited > 0 && (
+                    <span className="text-[9px] px-1 rounded" style={{ background: `${info.color}25` }}>
+                      {pVisited}✔
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -279,11 +438,11 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
         )}
         {activePlayer && (
           <p className="text-[10px] text-gray-600 mt-2">
-            Toque em qualquer casa para sortear um evento para{' '}
+            Toque em uma casa para explorá-la.{' '}
             <span style={{ color: CLASS_INFO[activePlayer.playerClass]?.color ?? '#9ca3af' }}>
               {activePlayer.name}
             </span>{' '}
-            ({activePlayer.playerClass}). Cartas serão da classe do jogador.
+            tem progresso salvo neste tabuleiro.
           </p>
         )}
       </div>
@@ -307,17 +466,48 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
               </div>
 
               <div className="p-3 grid grid-cols-6 gap-2">
-                {phaseCells.map(cell => (
-                  <button
-                    key={cell.id}
-                    onClick={() => handleCellClick(cell.id, cell.phase as PhaseName)}
-                    className="relative aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 transition-opacity active:opacity-70"
-                    style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.06)' }}
-                  >
-                    <span className="text-base leading-none">❓</span>
-                    <span className="text-[9px] font-bold text-gray-600">{cell.id}</span>
-                  </button>
-                ))}
+                {phaseCells.map(cell => {
+                  const visitedEvent = activePlayerData?.visitedCells[cell.id];
+                  const bossHere = !visitedEvent ? getBossAtCell(cell.id) : null;
+
+                  let cellIcon: string;
+                  let cellBg: string;
+                  let cellBorder: string;
+                  let cellColor: string;
+
+                  if (visitedEvent) {
+                    if (visitedEvent.type === 'boss') {
+                      cellIcon = BOSSES.find(b => b.name === visitedEvent.bossName)?.emoji ?? '💀';
+                    } else {
+                      cellIcon = CELL_TYPE_ICON[visitedEvent.type];
+                    }
+                    cellBg = `${CELL_TYPE_COLOR[visitedEvent.type]}18`;
+                    cellBorder = `1px solid ${CELL_TYPE_COLOR[visitedEvent.type]}45`;
+                    cellColor = CELL_TYPE_COLOR[visitedEvent.type];
+                  } else if (bossHere) {
+                    cellIcon = bossHere.emoji;
+                    cellBg = 'rgba(220,38,38,0.18)';
+                    cellBorder = '1px solid rgba(220,38,38,0.5)';
+                    cellColor = '#dc2626';
+                  } else {
+                    cellIcon = '❓';
+                    cellBg = 'rgba(0,0,0,0.4)';
+                    cellBorder = '1px solid rgba(255,255,255,0.06)';
+                    cellColor = '#4b5563';
+                  }
+
+                  return (
+                    <button
+                      key={cell.id}
+                      onClick={() => handleCellClick(cell.id, cell.phase)}
+                      className="relative aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 transition-opacity active:opacity-70"
+                      style={{ background: cellBg, border: cellBorder }}
+                    >
+                      <span className="text-base leading-none">{cellIcon}</span>
+                      <span className="text-[9px] font-bold" style={{ color: cellColor }}>{cell.id}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           );
@@ -326,19 +516,25 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
 
       {/* Legend */}
       <div className="card-dark rounded-xl p-3">
-        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Legenda de Eventos</h4>
-        <div className="grid grid-cols-4 gap-x-3 gap-y-1.5">
+        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Legenda</h4>
+        <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
           {(Object.entries(CELL_TYPE_ICON) as [BoardCellType, string][]).map(([type, icon]) => (
             <div key={type} className="flex items-center gap-1.5 text-[10px]">
               <span>{icon}</span>
-              <span style={{ color: CELL_TYPE_COLOR[type] }}>{type.charAt(0).toUpperCase() + type.slice(1)}</span>
+              <span style={{ color: CELL_TYPE_COLOR[type] }}>
+                {type === 'boss' ? 'Boss' : type.charAt(0).toUpperCase() + type.slice(1)}
+              </span>
             </div>
           ))}
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <span>❓</span>
+            <span className="text-gray-500">Inexplorada</span>
+          </div>
         </div>
       </div>
 
       {/* ─── Event Modal ─── */}
-      <Modal isOpen={!!openEvent} onClose={handleCloseEvent} title={openEvent ? `Casa #${openEvent.cellId}` : ''} size="sm">
+      <Modal isOpen={!!openEvent} onClose={() => setOpenEvent(null)} title={openEvent ? `Casa #${openEvent.cellId}` : ''} size="sm">
         {openEvent && (
           <div className="space-y-4">
             <div
@@ -348,7 +544,11 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
                 border: `1px solid ${PHASE_DEFS.find(p => p.name === openEvent.phase)?.color ?? '#dc2626'}30`,
               }}
             >
-              <span className="text-3xl">{CELL_TYPE_ICON[openEvent.type]}</span>
+              <span className="text-3xl">
+                {openEvent.type === 'boss'
+                  ? (BOSSES.find(b => b.name === openEvent.bossName)?.emoji ?? '💀')
+                  : CELL_TYPE_ICON[openEvent.type]}
+              </span>
               <div>
                 <div className="text-xs text-gray-500 mb-0.5">
                   {PHASE_DEFS.find(p => p.name === openEvent.phase)?.emoji} {openEvent.phase}
@@ -358,7 +558,7 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
                   className="text-[10px] px-1.5 py-0.5 rounded inline-block mt-1 font-medium"
                   style={{ color: CELL_TYPE_COLOR[openEvent.type], background: `${CELL_TYPE_COLOR[openEvent.type]}18` }}
                 >
-                  {openEvent.type.charAt(0).toUpperCase() + openEvent.type.slice(1)}
+                  {openEvent.type === 'boss' ? 'Boss' : openEvent.type.charAt(0).toUpperCase() + openEvent.type.slice(1)}
                   {openEvent.type === 'carta' && activePlayer ? ` — ${activePlayer.playerClass}` : ''}
                 </div>
               </div>
@@ -380,30 +580,75 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
               </div>
             )}
 
-            {activePlayer && (
-              <p className="text-[10px] text-gray-600 text-center">
-                Registrado no histórico de {activePlayer.name}
-              </p>
-            )}
-
-            <button onClick={handleCloseEvent}
+            <button onClick={() => setOpenEvent(null)}
               className="w-full btn-dark px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-300">
-              Fechar — A casa volta a ficar oculta
+              Fechar
             </button>
           </div>
         )}
       </Modal>
 
+      {/* ─── Boss Encounter Modal ─── */}
+      <Modal isOpen={!!openBossName} onClose={() => setOpenBossName(null)} title="👹 Boss Encontrado!" size="sm">
+        {openBossName && (() => {
+          const boss = BOSSES.find(b => b.name === openBossName);
+          if (!boss) return null;
+          const hp = bossHealths[boss.name] ?? boss.maxHealth;
+          const hpPct = Math.round((hp / boss.maxHealth) * 100);
+          return (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-red-900/15 border border-red-800/40">
+                <span className="text-4xl">{boss.emoji}</span>
+                <div>
+                  <div className="text-base font-bold text-red-300">{boss.name}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{boss.phase}</div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div className="text-xs font-bold text-red-400">❤️ {hp}/{boss.maxHealth}</div>
+                    <div className="flex-1 h-2 rounded-full bg-black/40 overflow-hidden" style={{ minWidth: 60 }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${hpPct}%`, background: hpPct > 50 ? '#ef4444' : hpPct > 25 ? '#f97316' : '#dc2626' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-300 leading-relaxed">{boss.story}</p>
+
+              <div className="p-3 rounded-lg bg-orange-900/10 border border-orange-800/30">
+                <p className="text-xs font-bold text-orange-400 mb-1">⚡ Habilidade Especial</p>
+                <p className="text-sm text-gray-300">{boss.ability}</p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-blue-900/10 border border-blue-800/30">
+                <p className="text-xs font-bold text-blue-400 mb-1">
+                  <Swords size={11} className="inline mr-1" />
+                  O Boss se moverá na próxima vez que você voltar ao tabuleiro
+                </p>
+                <p className="text-[11px] text-gray-500">
+                  Esta casa ficou marcada. O combate completo acontece na aba <strong>Bosses</strong>.
+                </p>
+              </div>
+
+              <button onClick={() => setOpenBossName(null)}
+                className="w-full btn-dark px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-300">
+                Fechar
+              </button>
+            </div>
+          );
+        })()}
+      </Modal>
+
       {/* ─── History Modal ─── */}
       <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="📜 Histórico de Exploração" size="md">
         <div className="space-y-4">
-          {/* Player tabs */}
           {players.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {players.map(p => {
                 const info = CLASS_INFO[p.playerClass] || { emoji: '❓', color: '#9ca3af' };
                 const isSelected = historyFor === p.id;
-                const count = playerHistories[p.id]?.events.length ?? 0;
+                const count = getVisitedEventsForPlayer(p.id).length;
                 return (
                   <button key={p.id} onClick={() => setHistoryFor(p.id)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
@@ -422,7 +667,6 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
             </div>
           )}
 
-          {/* History list */}
           {(() => {
             if (!historyFor) {
               return (
@@ -432,11 +676,12 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
                 </div>
               );
             }
-            const history = playerHistories[historyFor];
+
+            const events = getVisitedEventsForPlayer(historyFor);
             const player = players.find(p => p.id === historyFor);
             const info = player ? CLASS_INFO[player.playerClass] : null;
 
-            if (!history || history.events.length === 0) {
+            if (events.length === 0) {
               return (
                 <div className="text-center py-8">
                   <div className="text-3xl mb-2">🗺️</div>
@@ -451,22 +696,26 @@ export default function TabuleiroPanel({ players }: TabuleiroProps) {
               <div className="space-y-2">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-gray-500">
-                    {info?.emoji} {history.playerName} — {history.events.length} evento{history.events.length !== 1 ? 's' : ''}
+                    {info?.emoji} {player?.name} — {events.length} casa{events.length !== 1 ? 's' : ''} explorada{events.length !== 1 ? 's' : ''}
                   </span>
                   <button onClick={() => handleClearHistory(historyFor)}
                     className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-red-400 transition-colors px-2 py-1 rounded">
                     <Trash2 size={10} /> Limpar
                   </button>
                 </div>
-                {history.events.map(entry => (
+                {events.map(entry => (
                   <div key={entry.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-black/20">
-                    <span className="text-lg shrink-0">{CELL_TYPE_ICON[entry.type]}</span>
+                    <span className="text-lg shrink-0">
+                      {entry.type === 'boss'
+                        ? (BOSSES.find(b => b.name === entry.bossName)?.emoji ?? '💀')
+                        : CELL_TYPE_ICON[entry.type]}
+                    </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-semibold text-gray-200">Casa #{entry.cellId}</span>
                         <span className="text-[10px] px-1 py-0.5 rounded"
                           style={{ color: CELL_TYPE_COLOR[entry.type], background: `${CELL_TYPE_COLOR[entry.type]}15` }}>
-                          {entry.type}
+                          {entry.type === 'boss' ? 'Boss' : entry.type}
                         </span>
                       </div>
                       <div className="text-xs text-gray-300 mt-0.5">{entry.content}</div>

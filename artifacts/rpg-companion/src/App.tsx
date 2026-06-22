@@ -94,7 +94,13 @@ export default function App() {
           />
         );
       case 'tabuleiro':
-        return <TabuleiroPanel players={store.players} />;
+        return (
+          <TabuleiroPanel
+            players={store.players}
+            bossHealths={store.bossHealths}
+            bossDefeats={store.bossDefeats}
+          />
+        );
       default:
         return null;
     }

@@ -99,7 +99,8 @@ export type BoardCellType =
   | 'ouro'
   | 'cristal'
   | 'monstro'
-  | 'especial';
+  | 'especial'
+  | 'boss';
 
 export interface BoardCell {
   id: number;
